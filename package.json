@@ -1,7 +1,7 @@
 {
-  "name": "html-static-app",
+  "name": "techployx",
   "private": true,
-  "version": "0.0.1",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,8 +9,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@netlify/functions": "^4.2.6",
     "@supabase/supabase-js": "2.105.0",
-    "lucide": "^0.469.0"
+    "lucide": "^0.469.0",
+    "openai": "^6.7.0"
   },
   "optionalDependencies": {
     "@rollup/rollup-linux-x64-gnu": "^4.0.0"
