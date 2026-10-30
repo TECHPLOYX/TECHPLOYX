@@ -1,0 +1,189 @@
+import type { Config, Context } from '@netlify/functions';
+import OpenAI from 'openai';
+
+const SUPABASE_URL = 'https://wkfmdtfhvdeyhhxatfll.supabase.co';
+const ADMIN_USERNAME = 'admin';
+const ALLOWED_RESOURCES = new Set([
+  'leads?select=id,name,company,email,need,status,source,created_at,updated_at&order=created_at.desc',
+  'lead_events?select=id,lead_id,event_type,from_status,to_status,created_at&order=created_at.desc&limit=20',
+  'chat_sessions?select=id,locale,source,created_at&order=created_at.desc&limit=20',
+  'chat_messages?select=id,session_id,role,content,created_at&order=created_at.asc&limit=200',
+  'lead_notifications?select=id,lead_id,channel,recipient,status,attempts,last_error,created_at,sent_at&order=created_at.desc&limit=20',
+  'sales_prospects?select=id,company,contact_name,contact_role,source,status,next_action,next_action_at,storage_path,notes,created_at,updated_at&order=updated_at.desc',
+]);
+
+function json(data: unknown, status = 200): Response {
+  return Response.json(data, { status });
+}
+function fail(message: string, status: number): Response {
+  return json({ error: message }, status);
+}
+function env(name: string): string {
+  return Netlify.env.get(name) ?? '';
+}
+function configuredSecrets(): { pin: string; serviceKey: string } | null {
+  const pin = env('TECHPLOYX_ACCESS_PIN');
+  const serviceKey = env('SUPABASE_SERVICE_ROLE_KEY');
+  return pin && serviceKey ? { pin, serviceKey } : null;
+}
+function authorize(token: unknown): { serviceKey: string } | null {
+  const configured = configuredSecrets();
+  if (!configured || typeof token !== 'string' || token !== configured.pin) return null;
+  return { serviceKey: configured.serviceKey };
+}
+async function bodyOf(req: Request): Promise<Record<string, unknown>> {
+  try { return await req.json() as Record<string, unknown>; }
+  catch { return {}; }
+}
+async function supabaseRequest(path: string, serviceKey: string, init?: RequestInit): Promise<unknown> {
+  const response = await fetch(SUPABASE_URL + '/rest/v1/' + path, {
+    ...init,
+    headers: {
+      apikey: serviceKey,
+      Authorization: 'Bearer ' + serviceKey,
+      'Content-Type': 'application/json',
+      ...(init?.headers ?? {}),
+    },
+  });
+  if (!response.ok) throw new Error('Supabase request failed: ' + response.status);
+  const text = await response.text();
+  return text ? JSON.parse(text) : null;
+}
+
+const SYSTEM_PROMPT = `AGENTE COMERCIAL TECHPLOYX. Eres un asistente comercial digital de TECHPLOYX, no afirmes ser humano. Conversa de manera natural, cálida, precisa y muy breve. PRIORIDAD ABSOLUTA: responde exactamente a lo que preguntó el cliente, usando el contexto de la conversación y sin cambiar de tema. Para preguntas de una palabra como "cómo", "como", "cuánto", "por qué" o "y eso", interpreta la referencia a la última necesidad mencionada. Si dijo "quiero mejorar el CRM" y pregunta "cómo", explica concretamente que se pueden centralizar contactos, organizar oportunidades y automatizar recordatorios y seguimiento; no des una presentación genérica de TECHPLOYX. Si pregunta "qué sabes tú", responde a lo que puedes ayudar como agente digital sin exagerar. Si solo saluda, saluda y pregunta de forma neutra en qué ayudar, sin mencionar servicios. Por defecto 1-2 frases completas (hasta unas 55 palabras); cierra siempre cada frase, nunca dejes oraciones incompletas. No ofrezcas largas explicaciones ni frases de publicidad. No repitas el nombre de TECHPLOYX innecesariamente. CLASIFICACIÓN COMERCIAL: si solo pregunta para informarse, responde sin pedir datos. Si describe una necesidad empresarial, resuelve primero y ofrece un siguiente paso; pide solo UN dato de contacto por turno cuando sea natural, empezando por nombre y apellido; después teléfono de EE.UU. de diez dígitos y correo electrónico según los datos ya proporcionados. Si pregunta precios, implementación o expresa intención clara de contratar, pide datos con naturalidad sin omitir la respuesta comercial; jamás solicites los tres datos en una misma pregunta, no insistas si no quiere, nunca repitas lo que ya dio. No pidas código de país ni selección de canal. Servicios: CRM, captación de clientes potenciales, seguimiento comercial, automatización de procesos e integraciones. No inventes precios, plazos, garantías, funciones activas ni correos enviados. Habla en el idioma del visitante, español o inglés.`;
+
+async function chatResponse(payload: Record<string, unknown>): Promise<Response> {
+  const message = typeof payload.message === 'string' ? payload.message.trim().slice(0, 1800) : '';
+  if (!message) return fail('Message is required', 400);
+  const model = env('TECHPLOYX_AI_MODEL');
+  if (!model) return fail('AI model is not configured', 503);
+  const history = Array.isArray(payload.history)
+    ? payload.history.slice(-10).filter((item: any) => item && (item.role === 'user' || item.role === 'assistant') && typeof item.content === 'string')
+        .map((item: any) => ({ role: item.role as 'user' | 'assistant', content: item.content.slice(0, 1000) }))
+    : [];
+  try {
+    const client = new OpenAI();
+    const completion = await client.chat.completions.create({
+      model,
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        ...history,
+        { role: 'user', content: message },
+      ],
+      max_tokens: 480,
+    });
+    const answer = completion.choices[0]?.message?.content?.trim() || '';
+    if (!answer) return fail('Assistant temporarily unavailable', 503);
+
+    const transcript = [...history, { role: 'user' as const, content: message }]
+      .map(item => item.role + ': ' + item.content).join('\n');
+
+    let leadCapture: Record<string, unknown> = { ready: false, name: null, phone: null, email: null, need: null, company: null };
+    if (transcript.length > 25) {
+      try {
+        const extraction = await client.chat.completions.create({
+          model,
+          messages: [
+            { role: 'system', content: 'Extract only explicitly provided prospect contact information and business need. Never invent missing data. Return strict JSON with keys ready,name,phone,email,need,company. ready=true only if full first and last name, US phone of 10 digits, valid email, and a specific business need were explicitly provided.' },
+            { role: 'user', content: transcript },
+          ],
+          response_format: { type: 'json_object' },
+          max_tokens: 190,
+        });
+        const raw = extraction.choices[0]?.message?.content || '{}';
+        const parsed = JSON.parse(raw) as any;
+        const phone = typeof parsed.phone === 'string' ? parsed.phone.replace(/\D/g, '') : '';
+        const valid = parsed.ready === true && typeof parsed.name === 'string' && parsed.name.trim().split(/\s+/).length >= 2 &&
+          /^(1)?\d{10}$/.test(phone) && typeof parsed.email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parsed.email) &&
+          typeof parsed.need === 'string' && parsed.need.trim().length > 2;
+        if (valid) leadCapture = parsed;
+      } catch (error) {
+        console.warn('Lead extraction skipped', error);
+      }
+    }
+    return json({ answer, leadCapture });
+  } catch (error) {
+    console.error('Chat generation unavailable', error);
+    return fail('Assistant temporarily unavailable', 503);
+  }
+}
+
+export default async (req: Request, context: Context): Promise<Response> => {
+  const url = new URL(req.url);
+  const path = url.pathname;
+  const payload = req.method === 'GET' ? {} : await bodyOf(req);
+
+  if (path === '/api/_healthcheck' && req.method === 'GET') {
+    const configured = configuredSecrets();
+    if (!configured) return json({ ok: false, configured: false }, 503);
+    try {
+      const [leads, messages, notifications] = await Promise.all([
+        supabaseRequest('leads?select=id&limit=1', configured.serviceKey),
+        supabaseRequest('chat_messages?select=id&limit=1', configured.serviceKey),
+        supabaseRequest('lead_notifications?select=id,status&limit=1', configured.serviceKey),
+      ]);
+      return json({ ok: true, configured: true, leadStorage: Array.isArray(leads), chatMessageStorage: Array.isArray(messages), notificationQueue: Array.isArray(notifications) });
+    } catch {
+      return json({ ok: false, configured: true }, 502);
+    }
+  }
+
+  if (path === '/api/chat' && req.method === 'POST') return chatResponse(payload);
+
+  if (path === '/api/admin/login' && req.method === 'POST') {
+    if (payload.username !== ADMIN_USERNAME || typeof payload.password !== 'string') return fail('Invalid credentials', 401);
+    const auth = authorize(payload.password);
+    if (!auth) return fail('Invalid credentials', 401);
+    return json({ session: { access_token: payload.password, expires_at: Date.now() + 8 * 60 * 60 * 1000 } });
+  }
+
+  if (path === '/api/admin/data' && req.method === 'POST') {
+    const resource = typeof payload.resource === 'string' ? payload.resource : '';
+    const auth = authorize(payload.token);
+    if (!auth || !ALLOWED_RESOURCES.has(resource)) return fail('Unauthorized', 401);
+    try { return json(await supabaseRequest(resource, auth.serviceKey)); }
+    catch { return fail('Unable to load protected data', 502); }
+  }
+
+  if (path === '/api/admin/mail-test' && req.method === 'POST') {
+    const auth = authorize(payload.token);
+    if (!auth) return fail('Unauthorized', 401);
+    try {
+      const response = await fetch(SUPABASE_URL + '/functions/v1/techployx-mail-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + auth.serviceKey, apikey: auth.serviceKey },
+        body: JSON.stringify({ action: 'send_test' }),
+        signal: AbortSignal.timeout(30000),
+      });
+      const raw = await response.text();
+      let result: Record<string, unknown>;
+      try { result = JSON.parse(raw) as Record<string, unknown>; }
+      catch { result = { error: 'upstream_non_json', http_status: response.status }; }
+      return json({ ok: response.ok, upstream_status: response.status, result });
+    } catch (cause) {
+      return json({ ok: false, upstream_status: 0, result: { error: 'upstream_unreachable', type: cause instanceof Error ? cause.name : 'unknown' } });
+    }
+  }
+
+  const leadMatch = path.match(/^\/api\/admin\/lead\/([^/]+)$/);
+  if (leadMatch && req.method === 'PUT') {
+    const auth = authorize(payload.token);
+    if (!auth || typeof payload.status !== 'string') return fail('Unauthorized', 401);
+    try {
+      await supabaseRequest('leads?id=eq.' + encodeURIComponent(leadMatch[1]), auth.serviceKey, {
+        method: 'PATCH',
+        headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({ status: payload.status }),
+      });
+      return json({ ok: true });
+    } catch {
+      return fail('Unable to update status', 502);
+    }
+  }
+
+  return fail('Not found', 404);
+};
+
+export const config: Config = {
+  path: '/api/*',
+};
