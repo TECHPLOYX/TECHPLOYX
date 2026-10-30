@@ -1,5 +1,5 @@
 import './admin.css';
-import { api } from '@appdeploy/client';
+import { api } from './platform-api';
 
 
 const AUTHORIZED_USERNAME = 'admin';
