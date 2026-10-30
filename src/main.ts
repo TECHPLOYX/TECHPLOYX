@@ -1,6 +1,6 @@
 import './styles.css';
 import './chat.css';
-import { api } from '@appdeploy/client';
+import { api } from './platform-api';
 
 const SUPABASE_URL = 'https://wkfmdtfhvdeyhhxatfll.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_PmvEZM1IX5ma4qYbNmGB5Q_DBJNUxOo';
