@@ -1,0 +1,25 @@
+name: TECHPLOYX build check
+
+on:
+  push:
+    branches:
+      - migration/appdeploy-to-netlify
+  pull_request:
+    branches:
+      - migration/appdeploy-to-netlify
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm install
+      - name: Build Vite frontend
+        run: npm run build
