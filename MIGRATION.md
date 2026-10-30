@@ -24,3 +24,14 @@ Architecture is reusable, but each project needs its own repo, Supabase boundary
 
 ## Blocker
 Full AppDeploy source has not yet been verified as available in GitHub. No DNS, secrets, customer data, or production delivery changes are authorized by this preparation file.
+
+
+## Progress update — 2026-10-30
+- AppDeploy source snapshot has been recovered into this branch.
+- Browser API calls have been decoupled from @appdeploy/client via src/platform-api.ts.
+- Netlify Functions migration code is present under netlify/functions/ and Netlify build configuration is present in netlify.toml.
+- AppDeploy production remains untouched; DNS/domain has not been switched.
+- Supabase remains the data/automation source of truth; Amazon S3 remains the document-storage target architecture.
+- Zoho mail continues through the protected Supabase mail function; the 13 held notifications remain blocked.
+- Netlify account and team are reachable, but creating a new TECHPLOYX project through the current connector returned HTTP 403. Existing MAXMAQ and MedicalVan Netlify sites are not to be reused or repurposed.
+- Next gate: obtain one-time Netlify write authorization sufficient to create an isolated TECHPLOYX site, then configure env vars, staging deploy and smoke tests before any DNS change.
