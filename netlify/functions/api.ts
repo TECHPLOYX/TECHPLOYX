@@ -33,7 +33,7 @@ function authorized(token: unknown) {
 }
 
 export const handler = async (event: any) => {
-  const path = event.path.replace(/^\/.netlify\/functions\/api/, '') || '/';
+  const path = event.path.replace(/^\/.netlify\/functions\/api/, '').replace(/^\/api(?=\/|$)/, '') || '/';
   const body = event.body ? JSON.parse(event.body) : {};
   const method = event.httpMethod;
 
