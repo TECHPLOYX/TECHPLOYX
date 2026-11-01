@@ -28,7 +28,7 @@ function configuredSecrets(): { pin: string; serviceKey: string } | null {
 }
 function authorize(token: unknown): { serviceKey: string } | null {
   const configured = configuredSecrets();
-  if (!configured || typeof token !== 'string' || token !== configured.pin) return null;
+  if (!configured || typeof token !== 'string' || token.trim() !== configured.pin.trim()) return null;
   return { serviceKey: configured.serviceKey };
 }
 async function bodyOf(req: Request): Promise<Record<string, unknown>> {
