@@ -51,6 +51,28 @@ async function supabaseRequest(path: string, serviceKey: string, init?: RequestI
   return text ? JSON.parse(text) : null;
 }
 
+async function createZohoTransporter(mailUser: string, mailPassword: string): Promise<nodemailer.Transporter> {
+  const candidates = [
+    { host: 'smtp.zoho.com', port: 465, secure: true },
+    { host: 'smtppro.zoho.com', port: 465, secure: true },
+    { host: 'smtp.zoho.com', port: 587, secure: false },
+  ];
+  let lastError: unknown = null;
+  for (const candidate of candidates) {
+    const transporter = nodemailer.createTransport({
+      ...candidate,
+      auth: { user: mailUser, pass: mailPassword.trim() },
+    });
+    try {
+      await transporter.verify();
+      return transporter;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError ?? new Error('Zoho SMTP unavailable');
+}
+
 const SYSTEM_PROMPT = `AGENTE COMERCIAL TECHPLOYX. Eres un asistente comercial digital de TECHPLOYX, no afirmes ser humano. Conversa de manera natural, cálida, precisa y muy breve. PRIORIDAD ABSOLUTA: responde exactamente a lo que preguntó el cliente, usando el contexto de la conversación y sin cambiar de tema. Para preguntas de una palabra como "cómo", "como", "cuánto", "por qué" o "y eso", interpreta la referencia a la última necesidad mencionada. Si dijo "quiero mejorar el CRM" y pregunta "cómo", explica concretamente que se pueden centralizar contactos, organizar oportunidades y automatizar recordatorios y seguimiento; no des una presentación genérica de TECHPLOYX. Si pregunta "qué sabes tú", responde a lo que puedes ayudar como agente digital sin exagerar. Si solo saluda, saluda y pregunta de forma neutra en qué ayudar, sin mencionar servicios. Por defecto 1-2 frases completas (hasta unas 55 palabras); cierra siempre cada frase, nunca dejes oraciones incompletas. No ofrezcas largas explicaciones ni frases de publicidad. No repitas el nombre de TECHPLOYX innecesariamente. CLASIFICACIÓN COMERCIAL: si solo pregunta para informarse, responde sin pedir datos. Si describe una necesidad empresarial, resuelve primero y ofrece un siguiente paso; pide solo UN dato de contacto por turno cuando sea natural, empezando por nombre y apellido; después teléfono de EE.UU. de diez dígitos y correo electrónico según los datos ya proporcionados. Si pregunta precios, implementación o expresa intención clara de contratar, pide datos con naturalidad sin omitir la respuesta comercial; jamás solicites los tres datos en una misma pregunta, no insistas si no quiere, nunca repitas lo que ya dio. No pidas código de país ni selección de canal. Servicios: CRM, captación de clientes potenciales, seguimiento comercial, automatización de procesos e integraciones. No inventes precios, plazos, garantías, funciones activas ni correos enviados. Habla en el idioma del visitante, español o inglés.`;
 
 async function chatResponse(payload: Record<string, unknown>): Promise<Response> {
@@ -128,13 +150,7 @@ export default async (req: Request, context: Context): Promise<Response> => {
       if (mailPassword) {
         try {
           const mailUser = env('ZOHO_MAIL_USER') || 'hello@techployx.com';
-          const transporter = nodemailer.createTransport({
-            host: 'smtppro.zoho.com',
-            port: 465,
-            secure: true,
-            auth: { user: mailUser, pass: mailPassword.trim() },
-          });
-          await transporter.verify();
+          await createZohoTransporter(mailUser, mailPassword);
           mailTransport = true;
         } catch {
           mailTransport = false;
@@ -170,12 +186,7 @@ export default async (req: Request, context: Context): Promise<Response> => {
     const mailPassword = env('ZOHO_MAIL_APP_PASSWORD');
     if (!mailPassword) return json({ ok: false, upstream_status: 0, result: { error_code: 'ZOHO_MAIL_APP_PASSWORD_NOT_CONFIGURED' } });
     try {
-      const transporter = nodemailer.createTransport({
-        host: 'smtppro.zoho.com',
-        port: 465,
-        secure: true,
-        auth: { user: mailUser, pass: mailPassword.trim() },
-      });
+      const transporter = await createZohoTransporter(mailUser, mailPassword);
       const info = await transporter.sendMail({
         from: mailUser,
         to: mailUser,
