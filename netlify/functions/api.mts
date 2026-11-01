@@ -1,5 +1,6 @@
 import type { Config, Context } from '@netlify/functions';
 import OpenAI from 'openai';
+import nodemailer from 'nodemailer';
 
 const SUPABASE_URL = 'https://wkfmdtfhvdeyhhxatfll.supabase.co';
 const ADMIN_USERNAME = 'admin';
@@ -148,20 +149,26 @@ export default async (req: Request, context: Context): Promise<Response> => {
   if (path === '/api/admin/mail-test' && req.method === 'POST') {
     const auth = authorize(payload.token);
     if (!auth) return fail('Unauthorized', 401);
+    const mailUser = env('ZOHO_MAIL_USER') || 'hello@techployx.com';
+    const mailPassword = env('ZOHO_MAIL_APP_PASSWORD');
+    if (!mailPassword) return json({ ok: false, upstream_status: 0, result: { error_code: 'ZOHO_MAIL_APP_PASSWORD_NOT_CONFIGURED' } });
     try {
-      const response = await fetch(SUPABASE_URL + '/functions/v1/techployx-mail-status', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + auth.serviceKey, apikey: auth.serviceKey },
-        body: JSON.stringify({ action: 'send_test' }),
-        signal: AbortSignal.timeout(30000),
+      const transporter = nodemailer.createTransport({
+        host: 'smtppro.zoho.com',
+        port: 465,
+        secure: true,
+        auth: { user: mailUser, pass: mailPassword.trim() },
       });
-      const raw = await response.text();
-      let result: Record<string, unknown>;
-      try { result = JSON.parse(raw) as Record<string, unknown>; }
-      catch { result = { error: 'upstream_non_json', http_status: response.status }; }
-      return json({ ok: response.ok, upstream_status: response.status, result });
+      const info = await transporter.sendMail({
+        from: mailUser,
+        to: mailUser,
+        subject: 'TECHPLOYX controlled mail test',
+        text: 'Controlled delivery test. No production notification was released.',
+      });
+      return json({ ok: true, upstream_status: 250, result: { status: 'sent', message_id: info.messageId ?? null } });
     } catch (cause) {
-      return json({ ok: false, upstream_status: 0, result: { error: 'upstream_unreachable', type: cause instanceof Error ? cause.name : 'unknown' } });
+      console.error('Zoho direct mail test failed', cause);
+      return json({ ok: false, upstream_status: 502, result: { error_code: 'ZOHO_SMTP_FAILED' } });
     }
   }
 
