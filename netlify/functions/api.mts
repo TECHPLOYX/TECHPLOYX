@@ -122,7 +122,7 @@ export default async (req: Request, context: Context): Promise<Response> => {
         supabaseRequest('chat_messages?select=id&limit=1', configured.serviceKey),
         supabaseRequest('lead_notifications?select=id,status&limit=1', configured.serviceKey),
       ]);
-      return json({ ok: true, configured: true, accessPinLength: configured.pin.trim().length, leadStorage: Array.isArray(leads), chatMessageStorage: Array.isArray(messages), notificationQueue: Array.isArray(notifications) });
+      return json({ ok: true, configured: true, leadStorage: Array.isArray(leads), chatMessageStorage: Array.isArray(messages), notificationQueue: Array.isArray(notifications) });
     } catch {
       return json({ ok: false, configured: true }, 502);
     }
