@@ -179,6 +179,23 @@ export default async (req: Request, context: Context): Promise<Response> => {
     catch { return fail('Unable to load protected data', 502); }
   }
 
+  if (path === '/api/admin/notifications/batch-preview' && req.method === 'POST') {
+    const auth = authorize(payload.token);
+    const requestedLimit = Number(payload.limit ?? 3);
+    const allowedLimits = new Set([3, 4, 10, 15]);
+    if (!auth || !allowedLimits.has(requestedLimit)) return fail('Unauthorized or invalid batch size', 401);
+    try {
+      const items = await supabaseRequest(
+        'lead_notifications?select=id,lead_id,channel,recipient,status,attempts,last_error,created_at,sent_at&status=eq.pending&order=created_at.asc&limit=' + requestedLimit,
+        auth.serviceKey,
+      );
+      const batch = Array.isArray(items) ? items : [];
+      return json({ ok: true, batch_size: requestedLimit, count: batch.length, items: batch });
+    } catch {
+      return fail('Unable to prepare notification batch', 502);
+    }
+  }
+
   if (path === '/api/admin/mail-test' && req.method === 'POST') {
     const auth = authorize(payload.token);
     if (!auth) return fail('Unauthorized', 401);
