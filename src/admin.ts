@@ -96,6 +96,24 @@ mailTestButton?.addEventListener('click', async () => {
     mailTestResult.textContent = 'Mail test request failed';
   } finally { mailTestButton.disabled = false; }
 });
+const batchPreviewButton = document.querySelector<HTMLButtonElement>('#batch-preview-button');
+const batchPreviewResult = document.querySelector<HTMLElement>('#batch-preview-result');
+batchPreviewButton?.addEventListener('click', async () => {
+  if (!batchPreviewButton || !batchPreviewResult) return;
+  const session = await validSession();
+  if (!session) { batchPreviewResult.textContent = 'Admin session required'; return; }
+  batchPreviewButton.disabled = true;
+  batchPreviewResult.textContent = 'Preparing batch of 3...';
+  try {
+    const response = await api.post('/api/admin/notifications/batch-preview', { token: session.access_token, limit: 3 });
+    const report = response.data as { ok?: boolean; count?: number; items?: Array<{ recipient?: string; status?: string }> };
+    const recipients = (report.items ?? []).map(item => item.recipient ?? 'unknown').join(', ');
+    batchPreviewResult.textContent = report.ok ? 'Batch ready: ' + String(report.count ?? 0) + ' pending (' + (recipients || 'none') + ')' : 'Batch preparation failed';
+  } catch {
+    batchPreviewResult.textContent = 'Batch preparation failed';
+  } finally { batchPreviewButton.disabled = false; }
+});
+
 const notificationSummary = document.querySelector<HTMLElement>('#notification-summary');
 const chatSessionsEl = document.querySelector<HTMLElement>('#chat-sessions');
 const chatCount = document.querySelector<HTMLElement>('#chat-count');
