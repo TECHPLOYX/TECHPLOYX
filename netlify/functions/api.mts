@@ -123,7 +123,24 @@ export default async (req: Request, context: Context): Promise<Response> => {
         supabaseRequest('chat_messages?select=id&limit=1', configured.serviceKey),
         supabaseRequest('lead_notifications?select=id,status&limit=1', configured.serviceKey),
       ]);
-      return json({ ok: true, configured: true, leadStorage: Array.isArray(leads), chatMessageStorage: Array.isArray(messages), notificationQueue: Array.isArray(notifications) });
+      let mailTransport = false;
+      const mailPassword = env('ZOHO_MAIL_APP_PASSWORD');
+      if (mailPassword) {
+        try {
+          const mailUser = env('ZOHO_MAIL_USER') || 'hello@techployx.com';
+          const transporter = nodemailer.createTransport({
+            host: 'smtppro.zoho.com',
+            port: 465,
+            secure: true,
+            auth: { user: mailUser, pass: mailPassword.trim() },
+          });
+          await transporter.verify();
+          mailTransport = true;
+        } catch {
+          mailTransport = false;
+        }
+      }
+      return json({ ok: true, configured: true, leadStorage: Array.isArray(leads), chatMessageStorage: Array.isArray(messages), notificationQueue: Array.isArray(notifications), mailTransport });
     } catch {
       return json({ ok: false, configured: true }, 502);
     }
