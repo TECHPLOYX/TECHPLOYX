@@ -13,8 +13,8 @@ const ALLOWED_RESOURCES = new Set([
   'sales_prospects?select=id,company,contact_name,contact_role,source,status,next_action,next_action_at,storage_path,notes,created_at,updated_at&order=updated_at.desc',
 ]);
 
-function json(data: unknown, status = 200): Response {
-  return Response.json(data, { status });
+function json(data: unknown, status = 200, headers?: HeadersInit): Response {
+  return Response.json(data, { status, headers });
 }
 function fail(message: string, status: number): Response {
   return json({ error: message }, status);
@@ -27,10 +27,18 @@ function configuredSecrets(): { pin: string; serviceKey: string } | null {
   const serviceKey = env('SUPABASE_SERVICE_ROLE_KEY');
   return pin && serviceKey ? { pin, serviceKey } : null;
 }
-function authorize(token: unknown): { serviceKey: string } | null {
+function cookieValue(req: Request, name: string): string {
+  const header = req.headers.get('cookie') ?? '';
+  const item = header.split(';').map(part => part.trim()).find(part => part.startsWith(name + '='));
+  return item ? decodeURIComponent(item.slice(name.length + 1)) : '';
+}
+function authorize(token: unknown, req?: Request): { serviceKey: string } | null {
   const configured = configuredSecrets();
-  if (!configured || typeof token !== 'string' || token.trim() !== configured.pin.trim()) return null;
-  return { serviceKey: configured.serviceKey };
+  if (!configured) return null;
+  const candidate = typeof token === 'string' ? token.trim() : '';
+  const cookiePin = req ? cookieValue(req, 'techployx_admin_session') : '';
+  if (candidate === configured.pin.trim() || (candidate === 'cookie' && cookiePin === configured.pin.trim())) return { serviceKey: configured.serviceKey };
+  return null;
 }
 async function bodyOf(req: Request): Promise<Record<string, unknown>> {
   try { return await req.json() as Record<string, unknown>; }
@@ -166,21 +174,29 @@ export default async (req: Request, context: Context): Promise<Response> => {
 
   if (path === '/api/admin/login' && req.method === 'POST') {
     if (payload.username !== ADMIN_USERNAME || typeof payload.password !== 'string') return fail('Invalid credentials', 401);
-    const auth = authorize(payload.password);
+    const auth = authorize(payload.password, req);
     if (!auth) return fail('Invalid credentials', 401);
-    return json({ session: { access_token: payload.password, expires_at: Date.now() + 8 * 60 * 60 * 1000 } });
+    return json({ session: { access_token: 'cookie', expires_at: Date.now() + 30 * 24 * 60 * 60 * 1000 } }, 200, {
+      'Set-Cookie': 'techployx_admin_session=' + encodeURIComponent(payload.password) + '; Max-Age=2592000; Path=/; HttpOnly; Secure; SameSite=Lax',
+    });
+  }
+
+  if (path === '/api/admin/session' && req.method === 'GET') {
+    const auth = authorize('cookie', req);
+    if (!auth) return fail('Unauthorized', 401);
+    return json({ session: { access_token: 'cookie', expires_at: Date.now() + 30 * 24 * 60 * 60 * 1000 } });
   }
 
   if (path === '/api/admin/data' && req.method === 'POST') {
     const resource = typeof payload.resource === 'string' ? payload.resource : '';
-    const auth = authorize(payload.token);
+    const auth = authorize(payload.token, req);
     if (!auth || !ALLOWED_RESOURCES.has(resource)) return fail('Unauthorized', 401);
     try { return json(await supabaseRequest(resource, auth.serviceKey)); }
     catch { return fail('Unable to load protected data', 502); }
   }
 
   if (path === '/api/admin/notifications/batch-preview' && req.method === 'POST') {
-    const auth = authorize(payload.token);
+    const auth = authorize(payload.token, req);
     const requestedLimit = Number(payload.limit ?? 3);
     const allowedLimits = new Set([3, 4, 10, 15]);
     if (!auth || !allowedLimits.has(requestedLimit)) return fail('Unauthorized or invalid batch size', 401);
@@ -197,7 +213,7 @@ export default async (req: Request, context: Context): Promise<Response> => {
   }
 
   if (path === '/api/admin/mail-test' && req.method === 'POST') {
-    const auth = authorize(payload.token);
+    const auth = authorize(payload.token, req);
     if (!auth) return fail('Unauthorized', 401);
     const mailUser = env('ZOHO_MAIL_USER') || 'hello@techployx.com';
     const mailPassword = env('ZOHO_MAIL_APP_PASSWORD');
@@ -219,7 +235,7 @@ export default async (req: Request, context: Context): Promise<Response> => {
 
   const leadMatch = path.match(/^\/api\/admin\/lead\/([^/]+)$/);
   if (leadMatch && req.method === 'PUT') {
-    const auth = authorize(payload.token);
+    const auth = authorize(payload.token, req);
     if (!auth || typeof payload.status !== 'string') return fail('Unauthorized', 401);
     try {
       await supabaseRequest('leads?id=eq.' + encodeURIComponent(leadMatch[1]), auth.serviceKey, {
