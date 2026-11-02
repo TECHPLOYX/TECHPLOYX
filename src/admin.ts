@@ -141,11 +141,16 @@ function getSession(): Session | null {
 function saveSession(session: Session): void {
   const raw = JSON.stringify(session);
   localStorage.setItem(SESSION_KEY, raw);
-  document.cookie = SESSION_KEY + '=' + encodeURIComponent(raw) + '; Max-Age=28800; Path=/; SameSite=Lax; Secure';
+  document.cookie = SESSION_KEY + '=; Max-Age=0; Path=/; SameSite=Lax; Secure';
 }
 function clearSession(): void {
   localStorage.removeItem(SESSION_KEY);
   document.cookie = SESSION_KEY + '=; Max-Age=0; Path=/; SameSite=Lax; Secure';
+}
+async function recoverSession(): Promise<Session | null> {
+  try { const result = await api.get<{ session?: Session }>('/api/admin/session'); const session = result.data.session; if (session?.access_token) { saveSession(session); return session; } }
+  catch { /* no reusable server session */ }
+  return null;
 }
 
 async function validSession(): Promise<Session | null> { const session = getSession(); if (!session) return null; if (session.expires_at && session.expires_at <= Date.now()) { clearSession(); return null; } return session; }
@@ -333,4 +338,4 @@ refreshButton?.addEventListener('click', async function(){ const session=await v
 languageToggle?.addEventListener('click', function(){ currentLanguage = currentLanguage === 'en' ? 'es' : 'en'; localStorage.setItem(LANGUAGE_KEY, currentLanguage); applyLanguage();refreshStatusOptions(); const session = getSession(); if (session) void loadDashboard(session); });
 signOutButton?.addEventListener('click', function(){ clearSession(); location.reload(); });
 applyLanguage();
-void (async function(){ const session=await validSession(); if (session) { await loadDashboard(session); if (alertsEnabled && Notification.permission === 'granted') { if (enableAlertsButton) { enableAlertsButton.textContent=txt('Lead alerts enabled'); enableAlertsButton.disabled=true; } startLeadAlertPolling(session); } } })();
+void (async function(){ const session=(await validSession()) ?? (await recoverSession()); if (session) { await loadDashboard(session); if (alertsEnabled && Notification.permission === 'granted') { if (enableAlertsButton) { enableAlertsButton.textContent=txt('Lead alerts enabled'); enableAlertsButton.disabled=true; } startLeadAlertPolling(session); } } })();
