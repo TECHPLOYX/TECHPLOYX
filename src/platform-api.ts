@@ -19,6 +19,9 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 }
 
 export const api = {
+  get<T = unknown>(path: string): Promise<ApiResponse<T>> {
+    return request<T>("GET", path);
+  },
   post<T = unknown>(path: string, body?: unknown): Promise<ApiResponse<T>> {
     return request<T>("POST", path, body);
   },
