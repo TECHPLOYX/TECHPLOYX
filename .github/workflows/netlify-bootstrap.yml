@@ -12,6 +12,7 @@ permissions:
 jobs:
   bootstrap:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     env:
       NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
       NETLIFY_ACCOUNT_SLUG: admin-fkkzk1y
