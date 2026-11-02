@@ -1,6 +1,6 @@
 # TECHPLOYX migration control — AppDeploy to GitHub / Netlify / Supabase
 
-Status: PREPARATION; not deployed. Project: TECHPLOYX (INTERNAL). Production remains on AppDeploy until independent release passes validation.
+Status: NETLIFY-READY CODE / SITE CREATION BLOCKED. Project: TECHPLOYX (INTERNAL). Production remains on AppDeploy until independent release passes validation.
 
 ## Verified starting evidence (2026-10-30)
 - GitHub repository maxmaq-admin/TECHPLOYX exists; main README describes the dashboard.
@@ -22,8 +22,8 @@ Status: PREPARATION; not deployed. Project: TECHPLOYX (INTERNAL). Production rem
 ## Other projects
 Architecture is reusable, but each project needs its own repo, Supabase boundary, secrets, deployment and acceptance criteria. Do not migrate MAXMAQ, INSURANCE SALES SYSTEM 1, GarageFlow or MedicalVan in this TECHPLOYX change.
 
-## Blocker
-Full AppDeploy source has not yet been verified as available in GitHub. No DNS, secrets, customer data, or production delivery changes are authorized by this preparation file.
+## Current blocker
+The AppDeploy source has been recovered and the migration branch builds successfully in GitHub Actions. The remaining deployment blocker is Netlify site creation: the connected Netlify account/team can be read, but `create project` returns HTTP 403. No DNS, secrets, customer data, or production delivery changes are authorized until an isolated TECHPLOYX Netlify site exists.
 
 
 ## Progress update — 2026-10-30
@@ -35,3 +35,11 @@ Full AppDeploy source has not yet been verified as available in GitHub. No DNS, 
 - Zoho mail continues through the protected Supabase mail function; the 13 held notifications remain blocked.
 - Netlify account and team are reachable, but creating a new TECHPLOYX project through the current connector returned HTTP 403. Existing MAXMAQ and MedicalVan Netlify sites are not to be reused or repurposed.
 - Next gate: obtain one-time Netlify write authorization sufficient to create an isolated TECHPLOYX site, then configure env vars, staging deploy and smoke tests before any DNS change.
+
+
+## Validation update — 2026-11-01
+- GitHub Actions migration build completed successfully after cleanup of conflicting artifacts.
+- Obsolete AppDeploy backend code and conflicting Vercel migration files were removed from the migration branch.
+- No active source file in the migration branch references @appdeploy/client, @appdeploy/sdk, or APPDEPLOY_*; only this historical migration document contains the AppDeploy name for audit context.
+- Required Netlify runtime secret names currently referenced by code: TECHPLOYX_ACCESS_PIN, SUPABASE_SERVICE_ROLE_KEY, TECHPLOYX_AI_MODEL, ZOHO_MAIL_APP_PASSWORD, ZOHO_MAIL_USER.
+- Amazon S3 is part of the target architecture but is not yet wired into this migration branch; S3 credentials must not be created or copied until the storage route is implemented and validated.
