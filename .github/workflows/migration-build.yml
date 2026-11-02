@@ -20,5 +20,7 @@ jobs:
           node-version: '20'
       - name: Install dependencies
         run: npm install --no-audit --no-fund
-      - name: Build
+      - name: Build frontend
         run: npm run build
+      - name: Typecheck Netlify function
+        run: npm run typecheck:netlify
