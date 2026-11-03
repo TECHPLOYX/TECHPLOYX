@@ -135,7 +135,11 @@ async function chatResponse(payload: Record<string, unknown>): Promise<Response>
     return json({ answer, leadCapture });
   } catch (error) {
     console.error('Chat generation unavailable', error);
-    return fail('Assistant temporarily unavailable', 503);
+    return json({
+      answer: 'Puedo ayudarte a organizar el seguimiento de leads y automatizar procesos. ¿Qué parte de tu operación quieres mejorar primero?',
+      leadCapture: { ready: false, name: null, phone: null, email: null, need: null, company: null },
+      fallback: true,
+    });
   }
 }
 
