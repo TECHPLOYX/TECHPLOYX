@@ -87,7 +87,13 @@ async function chatResponse(payload: Record<string, unknown>): Promise<Response>
   const message = typeof payload.message === 'string' ? payload.message.trim().slice(0, 1800) : '';
   if (!message) return fail('Message is required', 400);
   const model = env('TECHPLOYX_AI_MODEL');
-  if (!model) return fail('AI model is not configured', 503);
+  if (!model) {
+    return json({
+      answer: 'Puedo ayudarte a organizar el seguimiento de leads y automatizar procesos. ¿Qué parte de tu operación quieres mejorar primero?',
+      leadCapture: { ready: false, name: null, phone: null, email: null, need: null, company: null },
+      fallback: true,
+    });
+  }
   const history = Array.isArray(payload.history)
     ? payload.history.slice(-10).filter((item: any) => item && (item.role === 'user' || item.role === 'assistant') && typeof item.content === 'string')
         .map((item: any) => ({ role: item.role as 'user' | 'assistant', content: item.content.slice(0, 1000) }))
