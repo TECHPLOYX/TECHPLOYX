@@ -176,6 +176,15 @@ export default async (req: Request, context: Context): Promise<Response> => {
     if (payload.username !== ADMIN_USERNAME || typeof payload.password !== 'string') return fail('Invalid credentials', 401);
     const auth = authorize(payload.password, req);
     if (!auth) return fail('Invalid credentials', 401);
+    context.cookies.set({
+      name: 'techployx_admin_session',
+      value: payload.password,
+      maxAge: 60 * 60 * 24 * 30,
+      path: '/',
+      httpOnly: true,
+      secure: true,
+      sameSite: 'lax',
+    });
     return json({ session: { access_token: 'cookie', expires_at: Date.now() + 30 * 24 * 60 * 60 * 1000 } }, 200, {
       'Set-Cookie': 'techployx_admin_session=' + encodeURIComponent(payload.password) + '; Max-Age=2592000; Path=/; HttpOnly; Secure; SameSite=Lax',
     });
