@@ -10,6 +10,7 @@ export default defineConfig({
         main: 'index.html',
         spanish: 'es/index.html',
         admin: 'admin.html',
+        continuity: 'continuidad.html',
       },
       maxParallelFileOps: 128,
     },
