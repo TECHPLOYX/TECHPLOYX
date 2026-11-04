@@ -7,7 +7,12 @@ function headers(serviceKey: string): HeadersInit {
   return { apikey: serviceKey, Authorization: 'Bearer ' + serviceKey, 'Content-Type': 'application/json' };
 }
 
-export default async (_req: Request, _context: Context): Promise<Response> => {
+export default async (req: Request, _context: Context): Promise<Response> => {
+  const manualRun = req.method === 'POST';
+  const accessPin = env('TECHPLOYX_ACCESS_PIN');
+  if (manualRun && (!accessPin || req.headers.get('x-techployx-access-pin') !== accessPin.trim())) {
+    return Response.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
+  }
   const serviceKey = env('SUPABASE_SERVICE_ROLE_KEY');
   if (!serviceKey) return Response.json({ ok: false, error: 'Missing service configuration' }, { status: 503 });
 
