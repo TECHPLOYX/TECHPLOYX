@@ -29,6 +29,7 @@ export default async (req: Request, _context: Context): Promise<Response> => {
   if (!response.ok) return json({ error: 'Gate update failed' }, 502);
   const rows = await response.json();
   if (!rows.length) return json({ error: 'Gate not found' }, 404);
+  await fetch(SUPABASE_URL + '/rest/v1/continuity_logs', { method: 'POST', headers: { ...headers, Prefer: 'return=minimal' }, body: JSON.stringify({ project_code: projectCode, type: 'gate_update', message: 'Puerta ' + gateKey + ' actualizada a ' + status + (evidence ? ': ' + evidence : ''), needs_human: status !== 'verified' }) });
   return json({ ok: true, gate: rows[0] });
 };
 export const config: Config = { path: '/project-gate-update' };
