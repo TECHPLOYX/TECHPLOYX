@@ -31,7 +31,8 @@ export default async (req: Request, _context: Context): Promise<Response> => {
   if (!response.ok) return json({ error: 'Gate update failed', detail: 'Supabase status ' + response.status }, 502);
   const rows = responseText ? JSON.parse(responseText) : [];
   if (!rows.length) return json({ error: 'Gate not found' }, 404);
-  await fetch(SUPABASE_URL + '/rest/v1/continuity_logs', { method: 'POST', headers: { ...headers, Prefer: 'return=minimal' }, body: JSON.stringify({ project_code: projectCode, type: 'gate_update', message: 'Puerta ' + gateKey + ' actualizada a ' + status + (evidence ? ': ' + evidence : ''), needs_human: status !== 'verified' }) });
-  return json({ ok: true, gate: rows[0] });
+  const audit = await fetch(SUPABASE_URL + '/rest/v1/continuity_logs', { method: 'POST', headers: { ...headers, Prefer: 'return=minimal' }, body: JSON.stringify({ project_code: projectCode, type: 'progress', message: 'Puerta ' + gateKey + ' actualizada a ' + status + (evidence ? ': ' + evidence : ''), needs_human: status !== 'verified' }) });
+  if (!audit.ok) console.warn(JSON.stringify({ projectCode, gateKey, auditStatus: audit.status }));
+  return json({ ok: true, gate: rows[0], audit_logged: audit.ok });
 };
 export const config: Config = { path: '/project-gate-update' };
