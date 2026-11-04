@@ -25,12 +25,19 @@ export default async (req: Request, _context: Context): Promise<Response> => {
   const nextAction = String(body.next_action ?? '').trim();
   const operationMode = String(body.operation_mode ?? 'centralized').trim();
   const clientScope = String(body.client_scope ?? 'TECHPLOYX').trim();
+  const templateKey = String(body.template_key ?? 'standard-web-project').trim();
 
   if (!/^[A-Z0-9_-]{2,40}$/.test(code) || !name || !objective || !nextAction) {
     return json({ error: 'Required fields: code, name, objective, next_action' }, 400);
   }
   if (!['centralized', 'standalone'].includes(operationMode)) return json({ error: 'Invalid operation_mode' }, 400);
   if (operationMode === 'standalone' && clientScope === 'TECHPLOYX') return json({ error: 'Standalone projects require an isolated client_scope' }, 400);
+
+  const templateResponse = await fetch(SUPABASE_URL + '/rest/v1/project_templates?template_key=eq.' + encodeURIComponent(templateKey) + '&active=eq.true&select=template_key,deploy_platform,route,tools,validation_gates', { headers: { apikey: serviceKey, Authorization: 'Bearer ' + serviceKey } });
+  if (!templateResponse.ok) return json({ error: 'Template lookup failed' }, 502);
+  const templates = await templateResponse.json();
+  if (!templates.length) return json({ error: 'Active template not found' }, 400);
+  const template = templates[0];
 
   const project = {
     code, name, status: 'active', priority: Number(body.priority ?? 3),
@@ -47,7 +54,7 @@ export default async (req: Request, _context: Context): Promise<Response> => {
     body: JSON.stringify(project),
   });
   if (!response.ok) return json({ error: 'Project registration failed' }, 502);
-  return json({ ok: true, project: (await response.json())[0], next: 'Validate repository, secrets, healthcheck, backend, notifications, backup and recovery before deployment.' }, 201);
+  return json({ ok: true, project: (await response.json())[0], template: { key: template.template_key, tools: template.tools, validation_gates: template.validation_gates }, next: 'Validate repository, secrets, healthcheck, backend, notifications, backup and recovery before deployment.' }, 201);
 };
 
 export const config: Config = { path: '/project-bootstrap' };
