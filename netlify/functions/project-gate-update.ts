@@ -23,8 +23,8 @@ export default async (req: Request, _context: Context): Promise<Response> => {
   if ((status === 'verified' || status === 'blocked') && !evidence) return json({ error: 'Evidence is required for verified or blocked status' }, 400);
 
   const headers = { apikey: serviceKey, Authorization: 'Bearer ' + serviceKey, 'Content-Type': 'application/json', Prefer: 'return=representation' };
-  const response = await fetch(SUPABASE_URL + '/rest/v1/project_gate_status?project_code=eq.' + encodeURIComponent(projectCode) + '&gate_key=eq.' + encodeURIComponent(gateKey), {
-    method: 'PATCH', headers, body: JSON.stringify({ status, evidence: evidence || null, checked_at: status === 'pending' ? null : new Date().toISOString(), updated_at: new Date().toISOString() }),
+  const response = await fetch(SUPABASE_URL + '/rest/v1/project_gate_status?on_conflict=project_code,gate_key', {
+    method: 'POST', headers: { ...headers, Prefer: 'resolution=merge-duplicates,return=representation' }, body: JSON.stringify({ project_code: projectCode, gate_key: gateKey, status, evidence: evidence || null, checked_at: status === 'pending' ? null : new Date().toISOString(), updated_at: new Date().toISOString() }),
   });
   const responseText = await response.text();
   console.log(JSON.stringify({ projectCode, gateKey, status, supabaseStatus: response.status, supabaseResponse: responseText.slice(0, 500) }));
