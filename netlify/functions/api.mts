@@ -239,9 +239,10 @@ export default async (req: Request, context: Context): Promise<Response> => {
     if (!mailPassword) return json({ ok: false, upstream_status: 0, result: { error_code: 'ZOHO_MAIL_APP_PASSWORD_NOT_CONFIGURED' } });
     try {
       const transporter = await createZohoTransporter(mailUser, mailPassword);
+      const recipient = env('ZOHO_NOTIFICATION_RECIPIENT') || 'notifications@techployx.com';
       const info = await transporter.sendMail({
         from: mailUser,
-        to: mailUser,
+        to: recipient,
         subject: 'TECHPLOYX controlled mail test',
         text: 'Controlled delivery test. No production notification was released.',
       });
