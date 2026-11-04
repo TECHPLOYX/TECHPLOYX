@@ -92,8 +92,8 @@ mailTestButton?.addEventListener('click', async () => {
     const response = await api.post('/api/admin/mail-test', { token: session.access_token });
     const report = response.data as { ok?: boolean; upstream_status?: number; result?: { status?: string; error_code?: string; message_id?: string } };
     mailTestResult.textContent = report.ok ? 'SMTP accepted: ' + String(report.result?.message_id ?? 'yes') : 'Mail test failed: ' + String(report.result?.error_code ?? report.upstream_status ?? 'unknown');
-  } catch {
-    mailTestResult.textContent = 'Mail test request failed';
+  } catch (error) {
+    mailTestResult.textContent = 'Mail test request failed: ' + (error instanceof Error ? error.message : 'unknown error');
   } finally { mailTestButton.disabled = false; }
 });
 const batchPreviewButton = document.querySelector<HTMLButtonElement>('#batch-preview-button');
