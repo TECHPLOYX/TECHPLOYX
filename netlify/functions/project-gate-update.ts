@@ -26,8 +26,10 @@ export default async (req: Request, _context: Context): Promise<Response> => {
   const response = await fetch(SUPABASE_URL + '/rest/v1/project_gate_status?project_code=eq.' + encodeURIComponent(projectCode) + '&gate_key=eq.' + encodeURIComponent(gateKey), {
     method: 'PATCH', headers, body: JSON.stringify({ status, evidence: evidence || null, checked_at: status === 'pending' ? null : new Date().toISOString(), updated_at: new Date().toISOString() }),
   });
-  if (!response.ok) return json({ error: 'Gate update failed' }, 502);
-  const rows = await response.json();
+  const responseText = await response.text();
+  console.log(JSON.stringify({ projectCode, gateKey, status, supabaseStatus: response.status, supabaseResponse: responseText.slice(0, 500) }));
+  if (!response.ok) return json({ error: 'Gate update failed', detail: 'Supabase status ' + response.status }, 502);
+  const rows = responseText ? JSON.parse(responseText) : [];
   if (!rows.length) return json({ error: 'Gate not found' }, 404);
   await fetch(SUPABASE_URL + '/rest/v1/continuity_logs', { method: 'POST', headers: { ...headers, Prefer: 'return=minimal' }, body: JSON.stringify({ project_code: projectCode, type: 'gate_update', message: 'Puerta ' + gateKey + ' actualizada a ' + status + (evidence ? ': ' + evidence : ''), needs_human: status !== 'verified' }) });
   return json({ ok: true, gate: rows[0] });
