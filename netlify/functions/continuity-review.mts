@@ -10,7 +10,9 @@ function headers(serviceKey: string): HeadersInit {
 export default async (req: Request, _context: Context): Promise<Response> => {
   const manualRun = req.method === 'POST';
   const accessPin = env('TECHPLOYX_ACCESS_PIN');
-  if (manualRun && (!accessPin || req.headers.get('x-techployx-access-pin') !== accessPin.trim())) {
+  const cookie = req.headers.get('cookie') ?? '';
+  const sessionCookie = cookie.split(';').map(part => part.trim()).find(part => part.startsWith('techployx_admin_session='))?.split('=').slice(1).join('=') ?? '';
+  if (manualRun && (!accessPin || (req.headers.get('x-techployx-access-pin') !== accessPin.trim() && decodeURIComponent(sessionCookie) !== accessPin.trim()))) {
     return Response.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
   }
   const serviceKey = env('SUPABASE_SERVICE_ROLE_KEY');
