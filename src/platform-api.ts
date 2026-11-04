@@ -12,7 +12,10 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   try { data = text ? JSON.parse(text) : null; } catch { data = text; }
 
   if (!response.ok) {
-    throw new Error(`API request failed (${response.status})`);
+    const detail = typeof data === 'object' && data !== null
+      ? String((data as { error?: unknown; detail?: unknown }).detail ?? (data as { error?: unknown }).error ?? '')
+      : '';
+    throw new Error(detail ? `API request failed (${response.status}): ${detail}` : `API request failed (${response.status})`);
   }
 
   return { data: data as T };
