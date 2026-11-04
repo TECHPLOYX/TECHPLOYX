@@ -13,11 +13,12 @@ export default async (req: Request, _context: Context): Promise<Response> => {
   const pin = env('TECHPLOYX_ACCESS_PIN'), serviceKey = env('SUPABASE_SERVICE_ROLE_KEY');
   if (!pin || !serviceKey || cookieValue(req, 'techployx_admin_session') !== pin) return json({ error: 'Unauthorized' }, 401);
   const headers = { apikey: serviceKey, Authorization: 'Bearer ' + serviceKey };
-  const [projectsResponse, logsResponse] = await Promise.all([
+  const [projectsResponse, logsResponse, agentsResponse] = await Promise.all([
     fetch(SUPABASE_URL + '/rest/v1/projects?select=code,name,status,priority,current_focus,next_action,blocked_reason,last_reviewed_at,updated_at&order=priority.asc', { headers }),
     fetch(SUPABASE_URL + '/rest/v1/continuity_logs?select=id,project_code,type,message,needs_human,created_at&order=created_at.desc&limit=50', { headers }),
+    fetch(SUPABASE_URL + '/rest/v1/agents?select=name,role,status,project_scope&order=name.asc', { headers }),
   ]);
-  if (!projectsResponse.ok || !logsResponse.ok) return json({ error: 'Continuity data unavailable' }, 502);
-  return json({ ok: true, projects: await projectsResponse.json(), logs: await logsResponse.json() });
+  if (!projectsResponse.ok || !logsResponse.ok || !agentsResponse.ok) return json({ error: 'Continuity data unavailable' }, 502);
+  return json({ ok: true, projects: await projectsResponse.json(), logs: await logsResponse.json(), agents: await agentsResponse.json() });
 };
 export const config: Config = { path: '/continuity-data' };
