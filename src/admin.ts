@@ -114,6 +114,21 @@ batchPreviewButton?.addEventListener('click', async () => {
   } finally { batchPreviewButton.disabled = false; }
 });
 
+const continuityReviewButton = document.querySelector<HTMLButtonElement>('#continuity-review-button');
+const continuityReviewResult = document.querySelector<HTMLElement>('#batch-preview-result');
+continuityReviewButton?.addEventListener('click', async () => {
+  if (!continuityReviewButton || !continuityReviewResult) return;
+  const session = await validSession();
+  if (!session) { continuityReviewResult.textContent = 'Admin session required'; return; }
+  continuityReviewButton.disabled = true;
+  continuityReviewResult.textContent = 'Running continuity review...';
+  try {
+    const response = await fetch('/.netlify/functions/continuity-review', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    const report = await response.json() as { ok?: boolean; checked?: number; alerts?: number; logged?: number; error?: string };
+    continuityReviewResult.textContent = report.ok ? 'Review complete: ' + String(report.checked ?? 0) + ' checked, ' + String(report.logged ?? 0) + ' logged.' : 'Review failed: ' + String(report.error ?? response.status);
+  } catch { continuityReviewResult.textContent = 'Review request failed'; }
+  finally { continuityReviewButton.disabled = false; }
+});
 const notificationSummary = document.querySelector<HTMLElement>('#notification-summary');
 const chatSessionsEl = document.querySelector<HTMLElement>('#chat-sessions');
 const chatCount = document.querySelector<HTMLElement>('#chat-count');
