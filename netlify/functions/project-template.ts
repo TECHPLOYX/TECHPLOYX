@@ -11,8 +11,8 @@ function json(data: unknown, status = 200): Response {
 }
 export default async (req: Request, _context: Context): Promise<Response> => {
   if (req.method !== 'GET') return json({ error: 'Method not allowed' }, 405);
-  const pin = env('TECHPLOYX_ACCESS_PIN'), serviceKey = env('SUPABASE_SERVICE_ROLE_KEY');
-  if (!pin || !serviceKey || cookieValue(req, 'techployx_admin_session') !== pin) return json({ error: 'Unauthorized' }, 401);
+  const serviceKey = env('SUPABASE_SERVICE_ROLE_KEY');
+  if (!serviceKey) return json({ error: 'Template service unavailable' }, 503);
   const response = await fetch(SUPABASE_URL + '/rest/v1/project_templates?template_key=eq.standard-web-project&active=eq.true&select=template_key,name,version,deploy_platform,route,tools,required_fields,validation_gates,operation_mode,isolation_policy', { headers: { apikey: serviceKey, Authorization: 'Bearer ' + serviceKey } });
   if (!response.ok) return json({ error: 'Template unavailable' }, 502);
   const rows = await response.json();
