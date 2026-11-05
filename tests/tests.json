@@ -1,0 +1,102 @@
+[
+  {
+    "name": "Approved reference structure is the first visible experience",
+    "sanity": true,
+    "viewport": "desktop",
+    "covers": [
+      "approved hero structure",
+      "large headline",
+      "live laptop dashboard",
+      "phone assistant",
+      "four benefit items",
+      "EN/ES",
+      "two hero buttons",
+      "no top menu"
+    ],
+    "description": "Verifies the first visible TECHPLOYX screen follows the approved reference structure instead of presenting a different hero composition.",
+    "steps": [
+      "Open the English landing",
+      "Confirm the first screen has a white/light-blue background",
+      "Confirm the large left headline and blue Into Customers line are prominent",
+      "Confirm a large laptop dashboard and phone assistant dominate the right side",
+      "Confirm four benefit items run along the bottom",
+      "Confirm EN / ES and both hero buttons are visible",
+      "Confirm there is no multi-item navigation menu"
+    ],
+    "expected": "The first visible screen matches the approved reference structure while keeping the latest simplified navigation decisions."
+  },
+  {
+    "name": "Spanish reference structure remains usable on mobile",
+    "viewport": "mobile",
+    "covers": [
+      "Spanish route",
+      "approved structure",
+      "mobile responsive",
+      "language switch",
+      "two hero actions"
+    ],
+    "description": "Verifies the same reference-based structure remains readable and functional in Spanish on mobile.",
+    "steps": [
+      "Open the Spanish landing on mobile",
+      "Confirm Spanish content appears immediately",
+      "Confirm EN / ES is visible",
+      "Confirm both hero actions are visible",
+      "Confirm laptop and phone remain recognizable"
+    ],
+    "expected": "The mobile version preserves the approved visual hierarchy and chat-led actions."
+  },
+  {
+    "name": "Qualified visitor is captured inside chat",
+    "viewport": "desktop",
+    "covers": [
+      "business assistant",
+      "natural qualification",
+      "name capture",
+      "single contact method capture",
+      "chat lead creation"
+    ],
+    "description": "Verifies the visual rebuild does not break in-chat lead capture.",
+    "steps": [
+      "Open Talk to TECHPLOYX",
+      "Describe a real business problem",
+      "Show intent to get help",
+      "Provide your name when asked",
+      "Provide one contact method when asked"
+    ],
+    "expected": "The agent keeps the visitor in chat and captures the qualified lead for follow-up."
+  },
+  {
+    "name": "What We Do remains in the same page experience",
+    "viewport": "desktop",
+    "covers": [
+      "What We Do button",
+      "chat opening",
+      "single-page experience"
+    ],
+    "description": "Verifies the secondary button keeps the visitor on the same page and opens a services-oriented conversation.",
+    "steps": [
+      "Open the landing",
+      "Click What We Do"
+    ],
+    "expected": "The chat opens and the visitor is not navigated to a different page."
+  },
+  {
+    "name": "Command Center supports Passkey sign-in",
+    "viewport": "desktop",
+    "covers": [
+      "passkey authentication",
+      "device registration",
+      "protected command center",
+      "lead operations",
+      "sales prospects"
+    ],
+    "description": "Verifies the Command Center offers device-based Passkey sign-in and preserves protected operational data access.",
+    "steps": [
+      "Open admin.html",
+      "Confirm the Sign in with Passkey button is visible",
+      "Complete the device passkey prompt for a previously registered user",
+      "Review Leads and Sales / Prospects"
+    ],
+    "expected": "The admin can open the protected Command Center with the TECHPLOYX username and access PIN, without email, Google, or QR."
+  }
+]
