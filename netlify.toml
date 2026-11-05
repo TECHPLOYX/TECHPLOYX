@@ -17,3 +17,13 @@
   for = "/api/*"
   [headers.values]
     Cache-Control = "no-store"
+
+[[redirects]]
+  from = "/continuidad"
+  to = "/continuidad.html"
+  status = 301
+
+[[redirects]]
+  from = "/continuity"
+  to = "/continuidad.html"
+  status = 301
