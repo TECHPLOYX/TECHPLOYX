@@ -124,17 +124,21 @@ jobs:
           # This first test intentionally attempts the entire dump. Supabase-managed
           # roles/extensions may prevent a standalone upstream PostgreSQL restore.
           # Failure is evidence of a remaining recovery gap, not a production outage.
+          # Restore only TECHPLOYX application schemas in a disposable vanilla
+          # PostgreSQL instance. Supabase-managed extensions such as pg_cron
+          # are excluded and require a separate full-platform recovery test.
           docker run --rm --network techployx-restore-isolated \
             -e PGPASSWORD=disposable-local-test-only \
             -v "$RUNNER_TEMP/techployx-restore-input:/restore:ro" \
             postgres:17 \
             pg_restore --exit-on-error --no-owner --no-acl \
+              --schema=public --schema=techployx_ops --schema=techployx_finance \
               --host techployx-restore-db --username postgres \
               --dbname postgres /restore/postgres.dump
           docker exec techployx-restore-db psql -U postgres -Atq \
             -c "SELECT count(*) FROM information_schema.tables WHERE table_schema IN ('public', 'techployx_ops', 'techployx_finance');" \
             | grep -Eq '^[1-9][0-9]*$'
-          echo "Isolated PostgreSQL restore validated; Supabase-managed services and object storage require separate checks."
+          echo "TECHPLOYX application-schema restore validated; Supabase extensions, auth, roles and object storage are NOT validated."
       - name: Remove decrypted input and disposable database
         if: always()
         shell: bash
