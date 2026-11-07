@@ -124,6 +124,15 @@ jobs:
           # Bootstrap missing namespaces because schema filtering skips their creation.
           docker exec techployx-restore-db psql -U postgres -v ON_ERROR_STOP=1 \
             -c "CREATE SCHEMA IF NOT EXISTS techployx_ops; CREATE SCHEMA IF NOT EXISTS techployx_finance;"
+          # Supabase policy principals and auth function signatures are absent
+          # from stock PostgreSQL. These are inert restore-only placeholders;
+          # this does NOT validate Supabase authentication behavior or security.
+          docker exec techployx-restore-db psql -U postgres -v ON_ERROR_STOP=1 \
+            -c "CREATE ROLE authenticated NOLOGIN; CREATE ROLE anon NOLOGIN; CREATE ROLE service_role NOLOGIN;" \
+            -c "CREATE SCHEMA IF NOT EXISTS auth;" \
+            -c "CREATE FUNCTION auth.jwt() RETURNS jsonb LANGUAGE sql STABLE AS 'SELECT NULL::jsonb';" \
+            -c "CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS 'SELECT NULL::uuid';" \
+            -c "CREATE FUNCTION auth.role() RETURNS text LANGUAGE sql STABLE AS 'SELECT NULL::text';"
           # This first test intentionally attempts the entire dump. Supabase-managed
           # roles/extensions may prevent a standalone upstream PostgreSQL restore.
           # Failure is evidence of a remaining recovery gap, not a production outage.
