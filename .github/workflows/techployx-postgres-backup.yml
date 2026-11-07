@@ -1,0 +1,80 @@
+name: TECHPLOYX PostgreSQL encrypted recovery backup
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '37 6 * * *'
+permissions:
+  contents: read
+concurrency:
+  group: techployx-postgres-backup
+  cancel-in-progress: false
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      DATABASE_URL: ${{ secrets.TECHPLOYX_POSTGRES_URL }}
+      BACKUP_PASSPHRASE: ${{ secrets.TECHPLOYX_BACKUP_PASSPHRASE }}
+    steps:
+      - name: Verify authorized backup configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${DATABASE_URL:-}" || -z "${BACKUP_PASSPHRASE:-}" ]]; then
+            echo "::error::Set TECHPLOYX_POSTGRES_URL and TECHPLOYX_BACKUP_PASSPHRASE in GitHub Actions Secrets."
+            exit 1
+          fi
+          if [[ "${#BACKUP_PASSPHRASE}" -lt 24 ]]; then
+            echo "::error::Encryption passphrase must contain at least 24 characters."
+            exit 1
+          fi
+      - name: Export PostgreSQL 17 to transient runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p "$RUNNER_TEMP/techployx-recovery"
+          docker run --rm --network host \
+            -e DATABASE_URL \
+            -v "$RUNNER_TEMP/techployx-recovery:/backup" \
+            postgres:17 \
+            sh -ec 'pg_dump --dbname="$DATABASE_URL" --format=custom --no-owner --no-acl --file=/backup/postgres.dump; pg_restore --list /backup/postgres.dump > /backup/toc.txt'
+          test -s "$RUNNER_TEMP/techployx-recovery/postgres.dump"
+          test -s "$RUNNER_TEMP/techployx-recovery/toc.txt"
+      - name: Encrypt and checksum backup
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
+            -in "$RUNNER_TEMP/techployx-recovery/postgres.dump" \
+            -out "$RUNNER_TEMP/techployx-recovery/postgres.dump.enc" \
+            -pass env:BACKUP_PASSPHRASE
+          sha256sum "$RUNNER_TEMP/techployx-recovery/postgres.dump.enc" \
+            | sed "s|$RUNNER_TEMP/techployx-recovery/||" \
+            > "$RUNNER_TEMP/techployx-recovery/SHA256SUMS"
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
+            -in "$RUNNER_TEMP/techployx-recovery/postgres.dump.enc" \
+            -out "$RUNNER_TEMP/techployx-recovery/roundtrip.dump" \
+            -pass env:BACKUP_PASSPHRASE
+          cmp "$RUNNER_TEMP/techployx-recovery/postgres.dump" \
+            "$RUNNER_TEMP/techployx-recovery/roundtrip.dump"
+          docker run --rm -v "$RUNNER_TEMP/techployx-recovery:/backup:ro" \
+            postgres:17 pg_restore --list /backup/roundtrip.dump >/dev/null
+          echo "Encrypted archive integrity verified. Database restore to isolated PostgreSQL remains a separate acceptance gate."
+      - name: Remove plaintext before uploading
+        if: always()
+        shell: bash
+        run: |
+          rm -f "$RUNNER_TEMP/techployx-recovery/postgres.dump" \
+                "$RUNNER_TEMP/techployx-recovery/roundtrip.dump" \
+                "$RUNNER_TEMP/techployx-recovery/toc.txt"
+      - name: Retain encrypted recovery artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: techployx-encrypted-pg-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/techployx-recovery/postgres.dump.enc
+            ${{ runner.temp }}/techployx-recovery/SHA256SUMS
+          retention-days: 7
+          if-no-files-found: error
