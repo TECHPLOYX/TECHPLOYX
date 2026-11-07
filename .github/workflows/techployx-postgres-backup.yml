@@ -121,6 +121,9 @@ jobs:
             sleep 1
           done
           docker exec techployx-restore-db pg_isready -U postgres -q
+          # Bootstrap missing namespaces because schema filtering skips their creation.
+          docker exec techployx-restore-db psql -U postgres -v ON_ERROR_STOP=1 \
+            -c "CREATE SCHEMA IF NOT EXISTS techployx_ops; CREATE SCHEMA IF NOT EXISTS techployx_finance;"
           # This first test intentionally attempts the entire dump. Supabase-managed
           # roles/extensions may prevent a standalone upstream PostgreSQL restore.
           # Failure is evidence of a remaining recovery gap, not a production outage.
