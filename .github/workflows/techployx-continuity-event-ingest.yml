@@ -95,14 +95,14 @@ jobs:
           WHERE NOT EXISTS (
             SELECT 1 FROM public.continuity_logs
              WHERE project_code=:'project_code'
-               AND message LIKE ('%event_key=' || :'event_key' || ';%')
+               AND position('event_key=' || :'event_key' || ';' IN message) > 0
           );
           COMMIT;
           SELECT id,project_code,type,created_at,
                  position('event_key=' || :'event_key' || ';' IN message) > 0 AS matching_event
             FROM public.continuity_logs
            WHERE project_code=:'project_code'
-             AND message LIKE ('%event_key=' || :'event_key' || ';%')
+             AND position('event_key=' || :'event_key' || ';' IN message) > 0
            ORDER BY created_at DESC LIMIT 1;
           SQL
       - name: Provenance and safety
