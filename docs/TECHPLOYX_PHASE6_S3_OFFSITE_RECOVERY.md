@@ -52,3 +52,21 @@ If identity or bucket is unavailable: **BLOCKED: AWS_TECHPLOYX_OFFSITE_IDENTITY_
 ### Credential access boundaries
 
 No secrets in chats, repo, docs or logs. IAM trust must not allow arbitrary forks, pull requests or other repos. Role policy must not grant access to other client projects. S3 fees can accrue; never create paid resources or widen privileges without owner authorization.
+
+## AWS route recovery / one-time infrastructure as code
+
+The earlier TECHPLOYX AWS Secure Access browser profile **was authenticated** on 2026-10-19 / 2026-10-21 (AWS account historically `949847741014`, `us-east-2`). On 2026-11-09 it was independently re-tested and redirected to AWS IAM sign-in, so its browser session is **expired or unusable**; this does NOT mean the underlying AWS account or already approved credentials are missing.
+
+GitHub Actions S3 through an AWS OIDC technical role is the correct long-term route, not a persistent personal browser session. MedicalVan's `medicalvan-github-actions` role and MAXMAQ's `maxmaq-github-dr` role are separate examples; **neither may be reused as TECHPLOYX's role**.
+
+New one-time reproducible infrastructure in `infra/aws/techployx-offsite-dr-oidc.yml` provides:
+
+- Dedicated private encrypted and versioned `techployx-dr-<account-id>-<region>` bucket with public access disabled and HTTPS enforced.
+- Scoped GitHub Actions OIDC role trusting **only** main in `TECHPLOYX/TECHPLOYX`.
+- Object access restricted to `techployx/postgres/*`, without delete rights.
+- A default 90-day lifecycle; validate retention policy and fees before deployment.
+- Three CloudFormation output values corresponding to the GitHub Actions repository variable names listed above.
+
+**Preconditions:** This template references a **pre-existing** GitHub OIDC provider in the chosen AWS account. Prior account projects had one; current AWS account state still needs inspection. Deploy this stack **only with an authenticated AWS administrator in that same account**, after reviewing cost and active policies. Deployment has not occurred; no AWS resources exist merely because the file is in GitHub. This is a one-time authorized installation, not a request to repeatedly enter personal credentials.
+
+Do not merge draft PR #13 or claim offsite recovery verified until AWS identity, account context, bucket/role and runtime tests are actually confirmed.
