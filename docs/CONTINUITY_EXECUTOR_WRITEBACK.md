@@ -1,6 +1,6 @@
 # TECHPLOYX — shared continuity write-back contract (pilot 2026-11-09)
 
-Status: **PILOT — do not mark end-to-end cross-chat delivery verified yet**.
+Status (2026-11-09): **GitHub Actions → Supabase, direct Work → Supabase → CHAT, cross-chat readback, and reusable GitHub Actions ingestion with deduplication VERIFIED. Automatic post-task Work lifecycle hook NOT VERIFIED.**
 
 ## Existing source of truth
 
@@ -103,3 +103,23 @@ is a deliberately honest distinction between *reusable ingestion* and
 
 **FruitysTech boundary:** use `FRUTITECH`; leave Namecheap, Zoho Mail, DNS,
 commercial operations, and all other projects untouched in continuity tests.
+
+## Verified repeatability evidence (2026-11-09)
+
+- PR: https://github.com/TECHPLOYX/TECHPLOYX/pull/10
+- New event-ingestion workflow: `.github/workflows/techployx-continuity-event-ingest.yml`
+- Run #1: https://github.com/TECHPLOYX/TECHPLOYX/actions/runs/42597235269 — success, event key `techployx-route-smoke-20261109-a`, row `5dcb90d7-0f9b-4fad-a87f-3be26da90435`.
+- Same-key retry: https://github.com/TECHPLOYX/TECHPLOYX/actions/runs/42597402320 — success; independent Supabase `GROUP BY event_key` returned **1 row** for key `a`.
+- Second distinct event: https://github.com/TECHPLOYX/TECHPLOYX/actions/runs/42597560232 — success, key `techployx-route-smoke-20261109-b`, row `8c6b511f-e3d8-4953-a7a1-2dea30fc04c2`; independent SQL returned **1 row** for key `b`.
+- Direct Work writeback pilot: `continuity_logs.id=8faf2b4c-41af-47ac-bdca-1451f9ff03f6`, successfully read independently from CHAT.
+- Previous cross-chat retrieval: reported from a separate controller conversation and corroborated against Supabase event `3eef78cd-33b2-4495-8d4c-d227cca896c8`.
+- Corporate gate `TECHPLOYX/executor_event_ingest_repeatability`: `verified`.
+- Corporate gate `TECHPLOYX/work_executor_automatic_writeback`: remains `pending` until a Work task with no explicit event-writeback request automatically emits a record and CHAT verifies it.
+
+### Honest automation boundary
+
+The GitHub Actions workflow automatically executes the database insert and read-back **when called** through an authenticated dispatch. It does not observe arbitrary Work sessions, and no general Work on-completion hook has been connected. Work's earlier *direct SQL* test and the Github *dispatch* tests were separate executions. They must never be conflated.
+
+If Work cannot invoke the authorized Supabase connection, use the existing GitHub authenticated dispatch route; do not insert credentials into Work or create a second database. A task owner must ensure the event is emitted; until an actual lifecycle-triggered call is established and tested, automatic coverage of **every** Work task is unverified.
+
+No production vendor settings (Namecheap, DNS, Zoho Mail), commercial behavior or other project data were changed during these tests.
