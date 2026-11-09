@@ -1,0 +1,112 @@
+name: TECHPLOYX reusable continuity event ingest
+on:
+  workflow_dispatch:
+    inputs:
+      project_code:
+        description: "Registered project code"
+        required: true
+        type: string
+      event_key:
+        description: "Stable task event key; use SAME value for retries"
+        required: true
+        type: string
+      origin_executor:
+        description: "Work, appdeploy, codex etc (caller assertion)"
+        required: true
+        type: string
+      result:
+        description: "Observed result"
+        required: true
+        type: choice
+        options: [VERIFIED, NOT_TESTED, BLOCKED]
+      task:
+        description: "Short non-sensitive task description"
+        required: true
+        type: string
+      evidence:
+        description: "Public-safe evidence URL or run reference"
+        required: true
+        type: string
+  repository_dispatch:
+    types: [techployx_continuity_writeback]
+permissions:
+  contents: read
+concurrency:
+  group: techployx-continuity-event-ingest
+  cancel-in-progress: false
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      DATABASE_URL: ${{ secrets.TECHPLOYX_POSTGRES_URL }}
+      PROJECT_CODE: ${{ github.event.inputs.project_code || github.event.client_payload.project_code }}
+      EVENT_KEY: ${{ github.event.inputs.event_key || github.event.client_payload.event_key }}
+      ORIGIN_EXECUTOR: ${{ github.event.inputs.origin_executor || github.event.client_payload.origin_executor }}
+      RESULT: ${{ github.event.inputs.result || github.event.client_payload.result }}
+      TASK: ${{ github.event.inputs.task || github.event.client_payload.task }}
+      EVIDENCE: ${{ github.event.inputs.evidence || github.event.client_payload.evidence }}
+      REQUESTING_ACTOR: ${{ github.actor }}
+    steps:
+      - name: Validate non-sensitive inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DATABASE_URL:-}" || { echo "::error::TECHPLOYX_POSTGRES_URL missing"; exit 1; }
+          [[ "${PROJECT_CODE:-}" =~ ^[A-Z][A-Z0-9_]{1,31}$ ]] || { echo "::error::Bad project code"; exit 1; }
+          [[ "${EVENT_KEY:-}" =~ ^[A-Za-z0-9_-]{8,96}$ ]] || { echo "::error::Bad event key"; exit 1; }
+          [[ "${ORIGIN_EXECUTOR:-}" =~ ^[a-z_]{2,24}$ ]] || { echo "::error::Bad executor"; exit 1; }
+          [[ "${RESULT:-}" =~ ^(VERIFIED|NOT_TESTED|BLOCKED)$ ]] || { echo "::error::Bad result"; exit 1; }
+          test -n "${TASK:-}" && test "${#TASK}" -le 260
+          test -n "${EVIDENCE:-}" && test "${#EVIDENCE}" -le 500
+          [[ "${TASK}" != *$'\n'* && "${EVIDENCE}" != *$'\n'* ]] || exit 1
+          [[ "${TASK}" != *"="* && "${EVIDENCE}" != *"="* ]] || exit 1
+      - name: Append event with idempotent write and readback
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm -i --network host \
+            -e DATABASE_URL -e PROJECT_CODE -e EVENT_KEY -e ORIGIN_EXECUTOR \
+            -e RESULT -e TASK -e EVIDENCE -e REQUESTING_ACTOR \
+            -e GITHUB_REPOSITORY -e GITHUB_RUN_ID \
+            postgres:17 sh -ec 'exec psql --no-psqlrc --set=ON_ERROR_STOP=1 \
+              --set=project_code="$PROJECT_CODE" --set=event_key="$EVENT_KEY" \
+              --set=executor="$ORIGIN_EXECUTOR" --set=result="$RESULT" \
+              --set=task="$TASK" --set=evidence="$EVIDENCE" \
+              --set=actor="$REQUESTING_ACTOR" --set=repo="$GITHUB_REPOSITORY" \
+              --set=run_id="$GITHUB_RUN_ID" \
+              --dbname="$DATABASE_URL"' <<'SQL'
+          \set ON_ERROR_STOP on
+          BEGIN;
+          SELECT 1 / CASE WHEN EXISTS (
+              SELECT 1 FROM public.projects WHERE code=:'project_code'
+            ) THEN 1 ELSE 0 END AS project_present;
+          INSERT INTO public.continuity_logs(project_code,type,message,needs_human)
+          SELECT :'project_code',
+                 CASE WHEN :'result'='BLOCKED' THEN 'block'
+                      WHEN :'result'='VERIFIED' THEN 'progress'
+                      ELSE 'review' END,
+                 'executor=github_actions_ingest; origin_executor=' || :'executor' ||
+                 '; actor=' || :'actor' || '; event_key=' || :'event_key' ||
+                 '; task=' || :'task' || '; result=' || :'result' ||
+                 '; evidence=' || :'evidence' ||
+                 '; dispatch=https://github.com/' || :'repo' || '/actions/runs/' || :'run_id',
+                 (:'result'='BLOCKED')
+          WHERE NOT EXISTS (
+            SELECT 1 FROM public.continuity_logs
+             WHERE project_code=:'project_code'
+               AND message LIKE ('%event_key=' || :'event_key' || ';%')
+          );
+          COMMIT;
+          SELECT id,project_code,type,created_at,
+                 position('event_key=' || :'event_key' || ';' IN message) > 0 AS matching_event
+            FROM public.continuity_logs
+           WHERE project_code=:'project_code'
+             AND message LIKE ('%event_key=' || :'event_key' || ';%')
+           ORDER BY created_at DESC LIMIT 1;
+          SQL
+      - name: Provenance and safety
+        run: |
+          echo "GitHub Actions ingestion succeeded or safely deduplicated."
+          echo "origin_executor is caller-provided, NOT proof of an automatic Work lifecycle hook."
+          echo "No DNS, Zoho, Namecheap, commercial data or gates were changed."
