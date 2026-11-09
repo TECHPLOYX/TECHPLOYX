@@ -1,0 +1,88 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'TECHPLOYX ONLY - private encrypted offsite PostgreSQL archive store plus GitHub OIDC role; requires pre-existing GitHub OIDC identity provider in this AWS account'
+Resources:
+  TechployxBackupBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'techployx-dr-${AWS::AccountId}-${AWS::Region}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: 'expire-older-than-90-days'
+            Status: Enabled
+            Prefix: 'techployx/postgres/'
+            ExpirationInDays: 90
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 90
+  TechployxTlsOnlyBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref TechployxBackupBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !GetAtt TechployxBackupBucket.Arn
+              - !Sub '${TechployxBackupBucket.Arn}/*'
+            Condition:
+              Bool:
+                'aws:SecureTransport': 'false'
+  TechployxGithubBackupRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'techployx-github-dr-${AWS::Region}'
+      Description: 'TECHPLOYX encrypted offsite S3 backup only; no other projects'
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: GithubMainBranchOnly
+            Effect: Allow
+            Principal:
+              Federated: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com'
+            Action: 'sts:AssumeRoleWithWebIdentity'
+            Condition:
+              StringEquals:
+                'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com'
+                'token.actions.githubusercontent.com:sub': 'repo:TECHPLOYX/TECHPLOYX:ref:refs/heads/main'
+      Policies:
+        - PolicyName: 'techployx-encrypted-backup-only'
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: InspectDedicatedBucket
+                Effect: Allow
+                Action:
+                  - 's3:ListBucket'
+                  - 's3:GetBucketPublicAccessBlock'
+                Resource: !GetAtt TechployxBackupBucket.Arn
+              - Sid: TransferEncryptedOnlyObjects
+                Effect: Allow
+                Action:
+                  - 's3:PutObject'
+                  - 's3:GetObject'
+                Resource: !Sub '${TechployxBackupBucket.Arn}/techployx/postgres/*'
+Outputs:
+  TechployxBackupBucketName:
+    Value: !Ref TechployxBackupBucket
+    Description: 'GitHub Actions variable TECHPLOYX_S3_BACKUP_BUCKET'
+  TechployxAwsBackupRoleArn:
+    Value: !GetAtt TechployxGithubBackupRole.Arn
+    Description: 'GitHub Actions variable TECHPLOYX_AWS_BACKUP_ROLE_ARN'
+  TechployxAwsBackupRegion:
+    Value: !Ref 'AWS::Region'
+    Description: 'GitHub Actions variable TECHPLOYX_AWS_BACKUP_REGION'
