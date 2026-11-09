@@ -1,0 +1,61 @@
+name: TECHPLOYX continuity executor-to-Supabase pilot
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: techployx-continuity-pilot
+  cancel-in-progress: false
+jobs:
+  writeback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: ${{ secrets.TECHPLOYX_POSTGRES_URL }}
+    steps:
+      - name: Verify central database secret exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DATABASE_URL:-}"
+      - name: Record and independently read a FruitysTech continuity canary
+        shell: bash
+        run: |
+          set -euo pipefail
+          # No project vendor credentials are needed or used by this control-only canary.
+          # DNS, Namecheap, and Zoho Mail settings are never modified.
+          docker run --rm -i --network host \
+            -e DATABASE_URL -e GITHUB_RUN_ID -e GITHUB_REPOSITORY \
+            postgres:17 \
+            sh -ec 'psql --no-psqlrc --set=ON_ERROR_STOP=1 --set=run_id="$GITHUB_RUN_ID" --set=repo="$GITHUB_REPOSITORY" --dbname="$DATABASE_URL"' <<'SQL'
+          \set ON_ERROR_STOP on
+          BEGIN;
+          INSERT INTO public.continuity_logs(project_code, type, message, needs_human)
+          SELECT 'FRUTITECH', 'review',
+                 'executor=github_actions; task=fruitystech.com Namecheap Zoho Mail DNS; actual_configuration=NOT_TESTED; result=continuity_writeback_pilot; evidence=https://github.com/' ||
+                 :'repo' || '/actions/runs/' || :'run_id', false
+          WHERE EXISTS (SELECT 1 FROM public.projects WHERE code='FRUTITECH')
+            AND NOT EXISTS (
+              SELECT 1 FROM public.continuity_logs
+              WHERE project_code='FRUTITECH' AND message LIKE
+                ('%continuity_writeback_pilot; evidence=https://github.com/' || :'repo' || '/actions/runs/' || :'run_id')
+            );
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM public.projects WHERE code='FRUTITECH') THEN
+              RAISE EXCEPTION 'FRUTITECH central registry missing';
+            END IF;
+          END $$;
+          COMMIT;
+          SELECT id, project_code, type, needs_human, created_at,
+                 (message LIKE '%continuity_writeback_pilot%' AND message LIKE
+                  ('%/actions/runs/' || :'run_id')) AS matches_this_executor_run
+            FROM public.continuity_logs
+           WHERE project_code='FRUTITECH'
+             AND message LIKE ('%/actions/runs/' || :'run_id')
+           ORDER BY created_at DESC LIMIT 1;
+          SQL
+      - name: Confirm durable write-back
+        shell: bash
+        run: |
+          echo "Canary written by GitHub Actions; controller must independently read Supabase records before claiming cross-environment continuity."
