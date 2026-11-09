@@ -1,0 +1,67 @@
+name: TECHPLOYX automatic executor completion receipt
+on:
+  workflow_run:
+    workflows:
+      - TECHPLOYX reusable continuity event ingest
+    types: [completed]
+permissions:
+  contents: read
+concurrency:
+  group: techployx-completion-receipt
+  cancel-in-progress: false
+jobs:
+  record:
+    if: ${{ github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.event == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: ${{ secrets.TECHPLOYX_POSTGRES_URL }}
+      SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+      SOURCE_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+      SOURCE_URL: ${{ github.event.workflow_run.html_url }}
+      SOURCE_WORKFLOW: ${{ github.event.workflow_run.name }}
+    steps:
+      - name: Validate authentic completed workflow event
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DATABASE_URL:-}"
+          [[ "${SOURCE_RUN_ID:-}" =~ ^[0-9]+$ ]]
+          [[ "${SOURCE_CONCLUSION:-}" =~ ^(success|failure|cancelled|timed_out|skipped|neutral|action_required|startup_failure|stale)$ ]]
+          [[ "${SOURCE_URL:-}" == https://github.com/TECHPLOYX/TECHPLOYX/actions/runs/* ]]
+          [[ "${SOURCE_WORKFLOW:-}" == "TECHPLOYX reusable continuity event ingest" ]]
+      - name: Automatically record authentic executor completion in Supabase
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm -i --network host \
+            -e DATABASE_URL -e SOURCE_RUN_ID -e SOURCE_CONCLUSION -e SOURCE_URL \
+            postgres:17 sh -ec 'exec psql --no-psqlrc --set=ON_ERROR_STOP=1 \
+              --set=run_id="$SOURCE_RUN_ID" \
+              --set=conclusion="$SOURCE_CONCLUSION" \
+              --set=url="$SOURCE_URL" \
+              --dbname="$DATABASE_URL"' <<'SQL'
+          \set ON_ERROR_STOP on
+          BEGIN;
+          SELECT 1 / CASE WHEN EXISTS(SELECT 1 FROM public.projects WHERE code='TECHPLOYX')
+                          THEN 1 ELSE 0 END AS corporate_project_exists;
+          INSERT INTO public.continuity_logs(project_code,type,message,needs_human)
+          SELECT 'TECHPLOYX',
+            CASE WHEN :'conclusion'='success' THEN 'progress' ELSE 'block' END,
+            'executor=github_actions_workflow_run; origin_workflow=TECHPLOYX reusable continuity event ingest; completion_event=completed; source_run_id=' ||
+            :'run_id' || '; conclusion=' || :'conclusion' || '; evidence=' || :'url' ||
+            '; scope=corporate_technical_event_only; work_completion_hook=NOT_VERIFIED',
+            (:'conclusion'<>'success')
+          WHERE NOT EXISTS(
+            SELECT 1 FROM public.continuity_logs
+            WHERE project_code='TECHPLOYX' AND
+              position('source_run_id=' || :'run_id' || '; conclusion=' IN message) > 0
+          );
+          COMMIT;
+          SELECT id,project_code,type,created_at,
+            position('source_run_id=' || :'run_id' || '; conclusion=' IN message)>0 AS receipt_matches
+          FROM public.continuity_logs
+          WHERE project_code='TECHPLOYX' AND
+            position('source_run_id=' || :'run_id' || '; conclusion=' IN message)>0
+          ORDER BY created_at DESC LIMIT 1;
+          SQL
