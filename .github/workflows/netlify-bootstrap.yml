@@ -1,0 +1,55 @@
+name: Netlify bootstrap site
+
+on:
+  push:
+    branches:
+      - migration/appdeploy-to-netlify
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      NETLIFY_ACCOUNT_SLUG: admin-fkkzk1y
+      NETLIFY_SITE_NAME: techployx
+    steps:
+      - name: Check reusable Netlify credential
+        run: |
+          if [ -z "$NETLIFY_AUTH_TOKEN" ]; then
+            echo "NETLIFY_AUTH_TOKEN is not available to this repository."
+            exit 2
+          fi
+      - name: Reuse existing site or create isolated TECHPLOYX site
+        shell: bash
+        run: |
+          set -euo pipefail
+          status=$(curl -sS -o /tmp/site.json -w "%{http_code}" \
+            -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+            "https://api.netlify.com/api/v1/sites/${NETLIFY_SITE_NAME}.netlify.app")
+          if [ "$status" = "200" ]; then
+            echo "TECHPLOYX site already exists; no duplicate created."
+            cat /tmp/site.json | python3 -c 'import json,sys; d=json.load(sys.stdin); print("site_id="+d.get("id","")); print("site_name="+d.get("name","")); print("url="+d.get("ssl_url",d.get("url","")))'
+            exit 0
+          fi
+          if [ "$status" != "404" ]; then
+            echo "Unexpected lookup status: $status"
+            cat /tmp/site.json
+            exit 3
+          fi
+          status=$(curl -sS -o /tmp/create.json -w "%{http_code}" \
+            -X POST \
+            -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data "{\"name\":\"$NETLIFY_SITE_NAME\"}" \
+            "https://api.netlify.com/api/v1/${NETLIFY_ACCOUNT_SLUG}/sites")
+          if [ "$status" != "200" ] && [ "$status" != "201" ]; then
+            echo "Netlify create failed with HTTP $status"
+            cat /tmp/create.json
+            exit 4
+          fi
+          cat /tmp/create.json | python3 -c 'import json,sys; d=json.load(sys.stdin); print("site_id="+d.get("id","")); print("site_name="+d.get("name","")); print("url="+d.get("ssl_url",d.get("url","")))'
