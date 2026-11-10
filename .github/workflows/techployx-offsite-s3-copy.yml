@@ -125,9 +125,9 @@ jobs:
             -c "CREATE SCHEMA IF NOT EXISTS techployx_ops; CREATE SCHEMA IF NOT EXISTS techployx_finance;" \
             -c "CREATE ROLE authenticated NOLOGIN; CREATE ROLE anon NOLOGIN; CREATE ROLE service_role NOLOGIN;" \
             -c "CREATE SCHEMA IF NOT EXISTS auth;" \
-            -c "CREATE FUNCTION auth.jwt() RETURNS jsonb LANGUAGE sql STABLE AS '\"SELECT NULL::jsonb\"' ;" \
-            -c "CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS '\"SELECT NULL::uuid\"' ;" \
-            -c "CREATE FUNCTION auth.role() RETURNS text LANGUAGE sql STABLE AS '\"SELECT NULL::text\"' ;"
+            -c "CREATE FUNCTION auth.jwt() RETURNS jsonb LANGUAGE sql STABLE AS 'SELECT NULL::jsonb';" \
+            -c "CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS 'SELECT NULL::uuid';" \
+            -c "CREATE FUNCTION auth.role() RETURNS text LANGUAGE sql STABLE AS 'SELECT NULL::text';"
           docker run --rm --network techployx-s3-restore-isolated \
             -e PGPASSWORD=disposable-local-test-only \
             -v "$restore_dir:/restore:ro" postgres:17 \
@@ -137,5 +137,5 @@ jobs:
               --dbname postgres /restore/postgres.dump
           docker exec techployx-s3-restore-db psql -U postgres -Atq \
             -c "SELECT count(*) FROM information_schema.tables WHERE table_schema IN ('public', 'techployx_ops', 'techployx_finance');" \
-            | grep -Eq '^[1-9][0-9]*
+            | grep -Eq '^[1-9][0-9]*$'
           echo "TECHPLOYX S3-source isolated application-schema restore VERIFIED: source GitHub run $SOURCE_RUN_ID"
