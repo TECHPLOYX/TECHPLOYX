@@ -24,6 +24,7 @@ jobs:
       AWS_REGION: ${{ vars.TECHPLOYX_AWS_BACKUP_REGION }}
       AWS_BUCKET: ${{ vars.TECHPLOYX_S3_BACKUP_BUCKET }}
       GH_TOKEN: ${{ github.token }}
+      BACKUP_PASSPHRASE: ${{ secrets.TECHPLOYX_BACKUP_PASSPHRASE }}
     steps:
       - name: Check dedicated authorization and trusted backup source
         shell: bash
@@ -91,3 +92,50 @@ jobs:
           cmp "$RUNNER_TEMP/techployx-offsite/postgres.dump.enc" "$dest/postgres.dump.enc"
           echo "TECHPLOYX independent encrypted S3 copy and readback VERIFIED: source GitHub run $SOURCE_RUN_ID"
           echo "Note: independent long-term retention, actual restore from this destination, Supabase Auth/Storage, and RPO/RTO remain separate gates."
+      - name: Restore S3 readback in disposable PostgreSQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          test -n "${BACKUP_PASSPHRASE:-}" || { echo "::error::TECHPLOYX_BACKUP_PASSPHRASE is unavailable"; exit 1; }
+          restore_dir="$RUNNER_TEMP/techployx-offsite-readback"
+          cleanup() {
+            docker rm -f techployx-s3-restore-db >/dev/null 2>&1 || true
+            docker network rm techployx-s3-restore-isolated >/dev/null 2>&1 || true
+            rm -f "$restore_dir/postgres.dump"
+          }
+          trap cleanup EXIT
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
+            -in "$restore_dir/postgres.dump.enc" \
+            -out "$restore_dir/postgres.dump" \
+            -pass env:BACKUP_PASSPHRASE
+          docker run --rm -v "$restore_dir:/restore:ro" postgres:17 \
+            pg_restore --list /restore/postgres.dump >/dev/null
+          docker network create techployx-s3-restore-isolated
+          docker run -d --rm --name techployx-s3-restore-db \
+            --network techployx-s3-restore-isolated \
+            -e POSTGRES_PASSWORD=disposable-local-test-only \
+            postgres:17 >/dev/null
+          for attempt in $(seq 1 40); do
+            docker exec techployx-s3-restore-db pg_isready -U postgres -q && break
+            sleep 1
+          done
+          docker exec techployx-s3-restore-db pg_isready -U postgres -q
+          docker exec techployx-s3-restore-db psql -U postgres -v ON_ERROR_STOP=1 \
+            -c "CREATE SCHEMA IF NOT EXISTS techployx_ops; CREATE SCHEMA IF NOT EXISTS techployx_finance;" \
+            -c "CREATE ROLE authenticated NOLOGIN; CREATE ROLE anon NOLOGIN; CREATE ROLE service_role NOLOGIN;" \
+            -c "CREATE SCHEMA IF NOT EXISTS auth;" \
+            -c "CREATE FUNCTION auth.jwt() RETURNS jsonb LANGUAGE sql STABLE AS '\"SELECT NULL::jsonb\"' ;" \
+            -c "CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS '\"SELECT NULL::uuid\"' ;" \
+            -c "CREATE FUNCTION auth.role() RETURNS text LANGUAGE sql STABLE AS '\"SELECT NULL::text\"' ;"
+          docker run --rm --network techployx-s3-restore-isolated \
+            -e PGPASSWORD=disposable-local-test-only \
+            -v "$restore_dir:/restore:ro" postgres:17 \
+            pg_restore --exit-on-error --no-owner --no-acl \
+              --schema=public --schema=techployx_ops --schema=techployx_finance \
+              --host techployx-s3-restore-db --username postgres \
+              --dbname postgres /restore/postgres.dump
+          docker exec techployx-s3-restore-db psql -U postgres -Atq \
+            -c "SELECT count(*) FROM information_schema.tables WHERE table_schema IN ('public', 'techployx_ops', 'techployx_finance');" \
+            | grep -Eq '^[1-9][0-9]*
+          echo "TECHPLOYX S3-source isolated application-schema restore VERIFIED: source GitHub run $SOURCE_RUN_ID"
