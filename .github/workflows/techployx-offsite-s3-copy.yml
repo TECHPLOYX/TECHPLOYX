@@ -55,6 +55,24 @@ jobs:
           test -s SHA256SUMS
           sha256sum --check SHA256SUMS
           test "$(find . -maxdepth 1 -type f | wc -l)" -eq 2
+      - name: Diagnose GitHub OIDC claims (metadata only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64, json, os, urllib.request
+          url = os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"] + "&audience=sts.amazonaws.com"
+          request = urllib.request.Request(
+              url,
+              headers={"Authorization": "Bearer " + os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]},
+          )
+          token = json.load(urllib.request.urlopen(request))["value"]
+          payload = token.split(".")[1]
+          payload += "=" * (-len(payload) % 4)
+          claims = json.loads(base64.urlsafe_b64decode(payload))
+          safe_claims = {key: claims.get(key) for key in ("iss", "aud", "sub", "repository", "ref", "job_workflow_ref")}
+          print(json.dumps(safe_claims, sort_keys=True))
+          PY
       - name: Assume TECHPLOYX-only AWS role through GitHub OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
