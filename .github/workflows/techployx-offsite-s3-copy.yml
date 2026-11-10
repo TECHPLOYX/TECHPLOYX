@@ -1,0 +1,93 @@
+name: TECHPLOYX encrypted PostgreSQL offsite S3 copy - gated pilot
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: "Successful TECHPLOYX PostgreSQL encrypted recovery backup run ID on main"
+        type: string
+        required: true
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+concurrency:
+  group: techployx-offsite-backup-pilot
+  cancel-in-progress: false
+jobs:
+  offsite_copy:
+    name: Transfer encrypted-only artifact to independent TECHPLOYX bucket
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+      AWS_ROLE_ARN: ${{ vars.TECHPLOYX_AWS_BACKUP_ROLE_ARN }}
+      AWS_REGION: ${{ vars.TECHPLOYX_AWS_BACKUP_REGION }}
+      AWS_BUCKET: ${{ vars.TECHPLOYX_S3_BACKUP_BUCKET }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check dedicated authorization and trusted backup source
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "${SOURCE_RUN_ID:-}" =~ ^[0-9]{6,20}$ ]] || { echo "::error::source_run_id is invalid"; exit 1; }
+          [[ "${AWS_ROLE_ARN:-}" =~ ^arn:aws:iam::[0-9]{12}:role/ ]] || { echo "::error::Dedicated TECHPLOYX AWS role not configured"; exit 1; }
+          [[ "${AWS_BUCKET:-}" =~ ^[a-z0-9][a-z0-9.-]{2,62}$ ]] || { echo "::error::Dedicated TECHPLOYX S3 bucket not configured"; exit 1; }
+          [[ "${AWS_REGION:-}" =~ ^[a-z]{2}-[a-z]+-[0-9]+$ ]] || { echo "::error::AWS backup region not configured"; exit 1; }
+          run_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}")"
+          echo "$run_json" | jq -e \
+            '.conclusion=="success" and .head_branch=="main" and
+             (.path | endswith(".github/workflows/techployx-postgres-backup.yml"))' >/dev/null ||
+            { echo "::error::Source run must be successful approved backup workflow on main"; exit 1; }
+      - name: Retrieve encrypted GitHub artifact ONLY
+        uses: actions/download-artifact@v4
+        with:
+          name: techployx-encrypted-pg-${{ inputs.source_run_id }}
+          run-id: ${{ inputs.source_run_id }}
+          repository: ${{ github.repository }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/techployx-offsite
+      - name: Verify encrypted archive checksum before transport
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/techployx-offsite"
+          test -s postgres.dump.enc
+          test -s SHA256SUMS
+          sha256sum --check SHA256SUMS
+          test "$(find . -maxdepth 1 -type f | wc -l)" -eq 2
+      - name: Assume TECHPLOYX-only AWS role through GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.TECHPLOYX_AWS_BACKUP_ROLE_ARN }}
+          aws-region: ${{ vars.TECHPLOYX_AWS_BACKUP_REGION }}
+          role-session-name: techployx-dr-offsite
+      - name: Verify distinct bucket ownership and protection
+        shell: bash
+        run: |
+          set -euo pipefail
+          aws sts get-caller-identity --query Account --output text >/dev/null
+          aws s3api head-bucket --bucket "$AWS_BUCKET"
+          aws s3api get-public-access-block --bucket "$AWS_BUCKET" \
+            --query 'PublicAccessBlockConfiguration.[BlockPublicAcls,IgnorePublicAcls,BlockPublicPolicy,RestrictPublicBuckets]' \
+            --output text | grep -Fx 'True	True	True	True' ||
+            { echo "::error::S3 bucket Block Public Access must be enabled in all four settings"; exit 1; }
+      - name: Upload encrypted artifact, then independently download and verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          prefix="techployx/postgres/${SOURCE_RUN_ID}"
+          aws s3api put-object --bucket "$AWS_BUCKET" --key "$prefix/postgres.dump.enc" \
+            --body "$RUNNER_TEMP/techployx-offsite/postgres.dump.enc" \
+            --server-side-encryption AES256 >/dev/null
+          aws s3api put-object --bucket "$AWS_BUCKET" --key "$prefix/SHA256SUMS" \
+            --body "$RUNNER_TEMP/techployx-offsite/SHA256SUMS" \
+            --server-side-encryption AES256 >/dev/null
+          dest="$RUNNER_TEMP/techployx-offsite-readback"
+          mkdir -p "$dest"
+          aws s3api get-object --bucket "$AWS_BUCKET" --key "$prefix/postgres.dump.enc" "$dest/postgres.dump.enc" >/dev/null
+          aws s3api get-object --bucket "$AWS_BUCKET" --key "$prefix/SHA256SUMS" "$dest/SHA256SUMS" >/dev/null
+          (cd "$dest" && sha256sum --check SHA256SUMS)
+          cmp "$RUNNER_TEMP/techployx-offsite/postgres.dump.enc" "$dest/postgres.dump.enc"
+          echo "TECHPLOYX independent encrypted S3 copy and readback VERIFIED: source GitHub run $SOURCE_RUN_ID"
+          echo "Note: independent long-term retention, actual restore from this destination, Supabase Auth/Storage, and RPO/RTO remain separate gates."
