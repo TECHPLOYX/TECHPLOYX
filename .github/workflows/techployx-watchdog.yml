@@ -1,0 +1,22 @@
+name: TECHPLOYX Watchdog
+on:
+  schedule:
+    - cron: '2,12,22,32,42,52 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  endpoint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Production availability
+        run: |
+          set -euo pipefail
+          for n in 1 2 3; do
+            code=$(curl -sSL -o /dev/null -w '%{http_code}' --connect-timeout 8 --max-time 20 'https://techployx.com/' || true)
+            if [ "$code" = 200 ]; then echo 'HEALTHY HTTP 200'; exit 0; fi
+            sleep 5
+          done
+          echo '::error::Production URL failed checks'
+          exit 1
